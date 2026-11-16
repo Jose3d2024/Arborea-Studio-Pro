@@ -1,0 +1,6 @@
+{
+  "name": "Arborea Studio Pro — 3D Botanical Modeler",
+  "description": "Professional procedural 3D tree, conifer, palm, and cactus modeler inspired by SpeedTree and GrowFX with multi-LOD geometry, PBR subsurface shaders, procedural bark/leaf textures, and GLB/OBJ export.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

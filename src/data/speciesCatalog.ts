@@ -1,0 +1,2336 @@
+import {
+  SpeciesPreset,
+  TreeParams,
+  FoliageType,
+  BarkType,
+  GrowthEngine,
+  RepresentationStyle,
+  CrownEnvelopeShape,
+  AlienArchetype,
+  MossFungiArchetype,
+  AquaticArchetype,
+  TonalShaderMode,
+  TonalPalettePreset,
+  BackgroundPreset,
+  EcosystemBaseType,
+  StemStructureType,
+  CanopyElementType,
+  SurfaceElementType,
+  HangingElementType,
+  SynthesizedTipPrimitive,
+  SynthesizedBasalFoliageType,
+} from '../types/botany';
+
+export const REPRESENTATION_STYLE_META: Record<
+  RepresentationStyle,
+  { label: string; short: string; description: string }
+> = {
+  botanical_leaves: {
+    label: 'Botánico Detallado (Hojas, Agujas, Setas y Flores 3D)',
+    short: 'Botánico 3D',
+    description: 'Geometría botánica y xenobotánica detallada por especie: hojas nervadas, acículas, sombreros fúngicos y odres.',
+  },
+  metaball_isosurface: {
+    label: 'Metaballs / Iso-Superficie Volumétrica (Andrew Marsh Tree3D-Web)',
+    short: 'Metaballs Iso',
+    description: 'Campo escalar 3D con extracción de iso-superficie continua (Marching Tetrahedra) fusionando los clústeres.',
+  },
+  geodesic_clusters: {
+    label: 'Clústeres Geodésicos con Ruido Perlin (Tree3D / Wiskered TreeGen)',
+    short: 'Geodésico',
+    description: 'Esferas icosaédricas subdivididas en los extremos de las ramas con achatamiento y desplazamiento Perlin.',
+  },
+  fibonacci_phyllotaxis: {
+    label: 'Filotaxis Espiral de Fibonacci (Tree3D-Web Golden Angle)',
+    short: 'Fibonacci',
+    description: 'Placas foliares distribuidas en domos espirales según el ángulo áureo (137.5°).',
+  },
+  tiered_plates: {
+    label: 'Placas Horizontales Estratificadas (Maqueta / Estudio Solar BIM)',
+    short: 'Placas BIM',
+    description: 'Estratos horizontales escalonados ideales para análisis de radiación solar y maquetas arquitectónicas.',
+  },
+  architectural_envelope: {
+    label: 'Envolvente Paramétrica + Esqueleto Interno (Tree3D-Web Envelope)',
+    short: 'Envolvente',
+    description: 'Volumen de revolución paramétrico (cónico, flama, umbela, esférico) con control de transmitancia solar.',
+  },
+  voxel_grid: {
+    label: 'Rejilla Volumétrica Voxelizada 3D (Estilizado / Voxel)',
+    short: 'Voxel 3D',
+    description: 'Cuantización espacial 3D del campo de copa con eliminación de caras internas.',
+  },
+};
+
+export const CROWN_SHAPE_META: Record<CrownEnvelopeShape, { label: string }> = {
+  spherical:        { label: 'Esférica / Globosa (Roble / Arce)' },
+  conical:          { label: 'Cónica Piramidal (Abeto / Picea)' },
+  hemispherical:    { label: 'Hemisférica Domo (Haya / Magnolia)' },
+  flame:            { label: 'Flama / Fastigiada (Ciprés / Álamo)' },
+  umbrella:         { label: 'Aparasolada / Umbela (Pino Piñonero / Acacia)' },
+  cylindrical:      { label: 'Cilíndrica Columnar' },
+  tapered_cylinder: { label: 'Cilindro Cónico (Abedul / Alerce)' },
+  inverse_conical:  { label: 'Cónica Invertida (Vaso Abierto)' },
+};
+
+export const FOLIAGE_TYPE_META: Record<FoliageType, { label: string; group: string; badge: string }> = {
+  needles_fascicle:   { label: 'Agujas en Fascículo (Pino / Pinus)', group: 'Coníferas (Acículas)', badge: 'Fascículos' },
+  needles_pectinate:  { label: 'Agujas Pectinadas Planas (Abeto / Abies)', group: 'Coníferas (Acículas)', badge: 'Pectinadas' },
+  needles_radial:     { label: 'Agujas Radiales 360° (Picea / Spruce)', group: 'Coníferas (Acículas)', badge: 'Cepillo 360°' },
+  needles_scale:      { label: 'Escamas Imbricadas (Ciprés / Secuoya)', group: 'Coníferas (Acículas)', badge: 'Escamas' },
+  needles_rosette:    { label: 'Rosetas de Braquiblastos (Cedro / Alerce)', group: 'Coníferas (Acículas)', badge: 'Verticilos' },
+
+  broadleaf_lobed:      { label: 'Hoja Lobulada (Roble / Quercus)', group: 'Frondosos (Planifolios)', badge: 'Lobulada' },
+  broadleaf_palmate:    { label: 'Hoja Palmada 5 Puntas (Arce / Liquidámbar)', group: 'Frondosos (Planifolios)', badge: 'Palmada' },
+  broadleaf_ovate:      { label: 'Hoja Ovalada Aserrada (Abedul / Haya / Álamo)', group: 'Frondosos (Planifolios)', badge: 'Ovalada' },
+  broadleaf_lanceolate: { label: 'Hoja Lanceolada (Eucalipto / Olivo / Sauce)', group: 'Frondosos (Planifolios)', badge: 'Lanceolada' },
+  broadleaf_ginkgo:     { label: 'Hoja Flabelada en Abanico (Ginkgo Biloba)', group: 'Frondosos (Planifolios)', badge: 'Abanico' },
+  broadleaf_heart:      { label: 'Hoja Cordiforme (Tilo / Álamo Temblón)', group: 'Frondosos (Planifolios)', badge: 'Corazón' },
+
+  fronds_pinnate:  { label: 'Frondas Pinnadas Arqueadas (Cocotero / Datilera)', group: 'Tropicales & Frondas', badge: 'Pinnada' },
+  fronds_palmate:  { label: 'Frondas Costapalmadas (Palmera Washingtonia)', group: 'Tropicales & Frondas', badge: 'Palmeada' },
+  fronds_fern:     { label: 'Frondas Bipinnadas (Helecho Arbóreo)', group: 'Tropicales & Frondas', badge: 'Bipinnada' },
+  paddle_banana:   { label: 'Hojas Anchas Musáceas (Bananero / Strelitzia)', group: 'Tropicales & Frondas', badge: 'Musácea' },
+  bamboo_lance:    { label: 'Follaje Plumoso Caulinares (Bambú)', group: 'Tropicales & Frondas', badge: 'Bambusoide' },
+
+  weeping_strands:   { label: 'Cortinas Péndulas (Sauce Llorón / Glicinia)', group: 'Ornamentales & Especiales', badge: 'Péndulo' },
+  blossom_clusters:  { label: 'Corimbos Florales 3D + Hojas (Sakura / Magnolia)', group: 'Ornamentales & Especiales', badge: 'Floración 3D' },
+  berry_clusters:    { label: 'Follaje + Racimos de Bayas (Acebo / Serbal)', group: 'Ornamentales & Especiales', badge: 'Frutos/Bayas' },
+  succulent_rosette: { label: 'Pencas Carnosas Dentadas (Agave / Aloe / Yuca)', group: 'Ornamentales & Especiales', badge: 'Suculenta' },
+
+  alien_umbrella_caps:  { label: 'Sombreros Fúngicos Bioluminiscentes (Xeno-Seta)', group: 'Xenobotánica & Alien', badge: 'Sombrero Xeno' },
+  alien_pitcher_traps:  { label: 'Odres / Cálices Carnívoros Ácidos', group: 'Xenobotánica & Alien', badge: 'Cáliz Ácido' },
+  alien_spore_bulbs:    { label: 'Esferas Craqueladas de Esporas (Ova)', group: 'Xenobotánica & Alien', badge: 'Esfera Ova' },
+  alien_tentacle_coils: { label: 'Espirales Tentaculares con Ventosas', group: 'Xenobotánica & Alien', badge: 'Tentáculo' },
+  ai_custom_element:    { label: '✨ Elemento Combinado IA / Personalizado', group: 'Combinación de Elementos IA', badge: 'Elemento IA' },
+
+  canopy_volume:     { label: 'Volumen Poliédrico Estilizado (Low-Poly)', group: 'Ornamentales & Especiales', badge: 'Geométrico' },
+  none:              { label: 'Sin Follaje (Ramas Desnudas / Solo Espinas)', group: 'Ornamentales & Especiales', badge: 'Desnudo' },
+};
+
+export const BARK_TYPE_META: Record<BarkType, { label: string }> = {
+  fissured:               { label: '1. Surcada Profunda (Roble / Nogal)' },
+  pine_plates:            { label: '2. Placas Escamosas (Pino / Conífera)' },
+  birch_paper:            { label: '3. Papiro Blanco con Lenticelas (Abedul)' },
+  smooth_ash:             { label: '4. Lisa Plateada (Haya / Magnolia)' },
+  fibrous_redwood:        { label: '5. Fibrosa Rojiza Trenzada (Secuoya / Cedro)' },
+  palm_rings:             { label: '6. Anillos Cicatriciales (Palmera / Cycas)' },
+  bamboo_culm:            { label: '7. Caña Articulada con Nudos (Bambú / Equiseto)' },
+  cactus_ribs:            { label: '8. Epidermis Costillada Cerosa (Cactus / Xeno)' },
+  mossy_deadwood:         { label: '9. ✨ Madera Envejecida con Musgo Briófito en Grietas' },
+  cork_oak_quercus:       { label: '10. ✨ Corcho de Alcornoque Rugoso y Agrietado' },
+  eucalyptus_rainbow:     { label: '11. ✨ Eucalipto Arcoíris Exfoliante Multicolor' },
+  gnarled_olive_burl:     { label: '12. ✨ Olivo / Bonsái Centenario con Nudos y Lupias' },
+  dragon_scales_cycad:    { label: '13. ✨ Escamas Acorazadas de Cícada / Drago' },
+  strangler_vine_lattice: { label: '14. ✨ Corteza de Raíces Trenzadas y Lianas' },
+  scifi_biolum_veins:     { label: '15. ✨ Shader Tronco Sci-Fi: Venas Bioluminiscentes' },
+  volcanic_magma_crust:   { label: '16. ✨ Shader Tronco Sci-Fi: Corteza Magmática / Brasas' },
+};
+
+export const ENGINE_META: Record<GrowthEngine, { label: string; description: string }> = {
+  composed_custom:   { label: '✨ Gran Biblioteca Modular de Partes (IA & Estudio)', description: 'Construye cualquier planta, tronco con musgo, enredadera de raíces, planta sci-fi de globos, corona floral o árbol combinando 18 troncos, 24 copas/hojas/globos, 10 superficies/púas y 16 shaders.' },
+  sympodial:         { label: 'Simpodial (Árbol Frondoso / Deciduo)', description: 'Bifurcación continua con dominancia apical regulable, fototropismo y perfil de copa.' },
+  monopodial:        { label: 'Monopodial (Conífera / Pino / Abeto)', description: 'Eje central dominante con verticilos escalonados y ramillas aciculares laterales.' },
+  weeping:           { label: 'Péndulo / Llorón (Sauce / Glicinia)', description: 'Ramas ascendentes que caen en cascadas gravitacionales flexibles.' },
+  palm:              { label: 'Estípite Apical (Palmeras / Musáceas)', description: 'Tronco esbelto anillado y curvado coronado por un penacho radial de frondas.' },
+  cactus:            { label: 'Cactácea Columnar / Articulada', description: 'Tallos suculentos acanalados, brazos con codos curvos, areolas lanosas, púas y flores apicales.' },
+  bamboo:            { label: 'Caulinar Segmentado (Bambú / Cañas)', description: 'Colonia de cañas huecas con entrenudos marcados y brotes foliares en los nudos.' },
+  rosette:           { label: 'Roseta Basal (Agave / Aloe / Helecho)', description: 'Disposición espiral filotáxica desde el cuello basal.' },
+  shrub:             { label: 'Arbustivo Multicaule (Matorral / Seto)', description: 'Múltiples tallos ramificados desde la base formando una mata densa.' },
+  alien_xenobotany:  { label: 'Xenobotánica & Flora Extraterrestre (12 Diseños)', description: 'Morfologías exoplanetarias: mega-setas en terrazas, espirales tentaculares, odres ácidos, corales perforados y esferas craqueladas.' },
+  moss_fungi_rock:   { label: 'Musgos, Líquenes & Hongos sobre Roca 3D (12 Especies)', description: 'Porción de roca natural 3D esculpida tapizada de almohadillas de musgo briófito, esporofitos, líquenes y colonias de setas del bosque.' },
+  aquatic_coral_algae: { label: 'Mundo Acuático: Corales, Esponjas, Anémonas & Algas (12 Especies)', description: 'Colonias coralinas calcificadas, esponjas tubulares, anémonas bioluminiscentes y bosques de kelp y praderas marinas ancladas en roca de arrecife.' },
+};
+
+export const STEM_STRUCTURE_META: Record<StemStructureType, { label: string }> = {
+  herbaceous_curved_stalk:    { label: '1. Tallo Herbáceo Curvado + Roseta Basal (Flor / Umbela / Allium)' },
+  multi_stalk_umbel_colony:   { label: '2. Colonia de Tallos Esbeltos & Domos (Hongos / Umbelas)' },
+  sympodial_tree:             { label: '3. Tronco & Ramas Bifurcadas en Y (Árbol Simpodial)' },
+  gnarled_bonsai:             { label: '4. Tronco Retorcido en S con Pisos Horizontales (Bonsái)' },
+  weeping_willow:             { label: '5. Ramas Arqueadas en Cascada Péndula (Sauce Llorón)' },
+  thorny_horn_crown:          { label: '6. Corona Radial de Astas / Garras Carnosas Espinosas' },
+  spiral_volute_vine:         { label: '7. Liana / Tronco en Espiral con Volutas Rizadas' },
+  rosette_cluster:            { label: '8. Colonia / Roseta Basal Multicaule' },
+  serpentine_mossy_deadwood:  { label: '9. ✨ Tronco Leñoso Serpenteante Doble-S con Muñones Rotos' },
+  strangler_root_cage:        { label: '10. ✨ Enredadera de Raíces Estranguladoras / Jaula Banyan' },
+  baobab_pachycaul_bottle:    { label: '11. ✨ Tronco Paquicaule Abombado (Baobab / Caudex Botella)' },
+  mangrove_stilt_arch:        { label: '12. ✨ Raíces Zanco Arqueadas / Manglar Aéreo' },
+  dichotomous_dragon_tree:    { label: '13. ✨ Ramificación Dicotómica en Paraguas (Drago / Candelabro)' },
+  braided_helix_trunks:       { label: '14. ✨ Doble / Triple Tronco Trenzado en Hélice ADN' },
+  segmented_bamboo_equisetum: { label: '15. ✨ Tallo Articulado con Anillos y Verticilos Radiales' },
+  hollow_ancient_snag:        { label: '16. ✨ Tronco Ancestral Acanalado con Contrafuertes' },
+  creeping_rhizome_runners:   { label: '17. ✨ Rizoma Rastrero Horizontal con Brotes Verticales' },
+  scifi_tendril_cradle:       { label: '18. ✨ Cuna Xenobotánica de Tentáculos y Pedúnculos Sci-Fi' },
+};
+
+export const CANOPY_ELEMENT_META: Record<CanopyElementType, { label: string }> = {
+  spherical_bubble_umbel:        { label: '1. ✨ Esfera / Umbela Radial de Burbujas Iridiscentes (Allium)' },
+  custom_fungi_cap:              { label: '2. Domos / Sombreros Fúngicos con Motas, Láminas y Filamentos' },
+  custom_flower_corolla:         { label: '3. Corolas / Capullos Florales 3D con Pétalos y Estambres' },
+  radiating_floret_head:         { label: '4. ✨ Cabezuela / Estrella Multi-Pétalo (Protea / Girasol)' },
+  hanging_bell_cluster:          { label: '5. ✨ Racimo de Campanas / Farolillos Acampanados Colgantes' },
+  crystal_prism_crown:           { label: '6. ✨ Corona de Prismas / Cristales Translúcidos' },
+  procedural_lathe_head:         { label: '7. ✨ Cáliz / Odre / Sombrero Esculpido por Revolución IA' },
+  custom_leaf_lamina:            { label: '8. Láminas Foliares 3D Esculpidas y Nervadas a Medida' },
+  cloud_bonsai_pads:             { label: '9. Nubes / Almohadillas Densas Estratificadas (Bonsái)' },
+  thorn_spur_clusters:           { label: '10. Racimos de Bulbos / Esporas / Flores entre Espinas' },
+  stem_hugging_leaves:           { label: '11. Hojas Adheridas a lo Largo del Tallo / Espiral' },
+  moss_velvet_mantle:            { label: '12. ✨ Manto de Musgo Briófito y Muñones Leñosos (Sin Hojas)' },
+  scifi_biolum_plasma_globes:    { label: '13. ✨ Globos Sci-Fi de Plasma Bioluminiscente con Anillos' },
+  scifi_voronoi_ova_balloons:    { label: '14. ✨ Globos / Aerostatos Celulares Voronoi Flotantes (Sci-Fi)' },
+  fenestrated_monstera_leaves:   { label: '15. ✨ Hojas Fenestradas / Perforadas Tropicales (Monstera)' },
+  palmate_maple_star_leaves:     { label: '16. ✨ Hojas Palmadas de 5–7 Puntas Nervadas (Arce / Ricino)' },
+  pinnate_fern_palm_fronds:      { label: '17. ✨ Frondas Pinnadas Arqueadas (Helecho / Palmera / Cycas)' },
+  succulent_fleshy_rosettes:     { label: '18. ✨ Rosetas de Pencas Suculentas Carnosas con Espinas' },
+  conifer_needle_brushes:        { label: '19. ✨ Escobillas de Acículas / Agujas de Pino y Piñas Leñosas' },
+  lotus_magnolia_corolla_crown:  { label: '20. ✨ Corona Imperial de Pétalos Acopados y Receptáculo de Semillas' },
+  passionflower_filament_corona: { label: '21. ✨ Corona Radial de Filamentos y Pétalos (Pasiflora / Xeno)' },
+  heliconia_bract_candelabra:    { label: '22. ✨ Corona de Brácteas Escalonadas en Quilla (Ave del Paraíso)' },
+  dehiscent_seed_pods_coronas:   { label: '23. ✨ Cápsulas de Semillas Abiertas, Piñas y Vainas con Semillas' },
+  carnivorous_nepenthes_pitchers:{ label: '24. ✨ Odres / Trampas Carnívoras con Peristoma y Opérculo' },
+};
+
+export const SYNTHESIZED_TIP_META: Record<SynthesizedTipPrimitive, { label: string }> = {
+  iridescent_bubble:       { label: '1. Burbujas / Esferas Iridiscentes Translúcidas' },
+  dewy_droplet:            { label: '2. Gotas de Rocío / Néctar Luminiscente' },
+  micro_floret_star:       { label: '3. Estrellas Florales / Flósculos de 5 Pétalos' },
+  cupped_bell_calyx:       { label: '4. Mini-Campanas / Cálices Acopados' },
+  faceted_crystal_gem:     { label: '5. Cristales / Gemas Facetadas' },
+  spotted_spore_dome:      { label: '6. Mini-Domos Fúngicos Moteados' },
+  lanceolate_blade:        { label: '7. Hojas / Brácteas Lanceoladas' },
+  bryophyte_moss_pad:      { label: '8. ✨ Cojines y Pelusa de Musgo Briófito sobre Corteza' },
+  scifi_plasma_orb:        { label: '9. ✨ Globo / Orbe Sci-Fi con Núcleo Pulsante y Anillo' },
+  spiked_seed_burr:        { label: '10. ✨ Semilla / Cápsula Erizada de Púas (Cadillo / Datura)' },
+  winged_helicoid_seed:    { label: '11. ✨ Semilla Alada / Sámara con Aletas en Hélice' },
+  crowned_pomegranate_pod: { label: '12. ✨ Cápsula / Granada Coronada con Cáliz Real' },
+  recurved_thorn_claw:     { label: '13. ✨ Garra / Púa Quitinoide Curvada' },
+  feathery_pappus_plume:   { label: '14. ✨ Vilano Plumoso de Semilla (Diente de León / Cardo)' },
+  sucker_tentacle_cup:     { label: '15. ✨ Ventosa / Cáliz Anular Bioluminiscente' },
+  none:                    { label: '16. Sin Pieza Terminal Extra' },
+};
+
+export const SYNTHESIZED_BASAL_META: Record<SynthesizedBasalFoliageType, { label: string }> = {
+  long_grass_blades:     { label: '1. Hojas Herbáceas Largas Arqueadas (Hierba / Lirio / Allium)' },
+  broad_rosette_leaves:  { label: '2. Roseta de Hojas Anchas Basales' },
+  spiny_succulent_claws: { label: '3. Pencas / Garras Carnosas Espinosas' },
+  fern_fiddleheads:      { label: '4. Frondas & Báculos de Helecho en Base' },
+  baby_umbel_sprouts:    { label: '5. Brotes Jóvenes de Setas / Domos en Base' },
+  none:                  { label: '6. Sin Follaje Basal Extra' },
+};
+
+export const SURFACE_ELEMENT_META: Record<SurfaceElementType, { label: string }> = {
+  braided_vines:              { label: '1. Lianas & Cuerdas Leñosas Trenzadas alrededor del Tronco' },
+  curved_thorns_spines:       { label: '2. Espinas & Aguijones Curvos 3D a lo Largo del Tallo' },
+  moss_lichen_bark:           { label: '3. Corteza Rugosa con Musgo Briófito y Venas Orgánicas' },
+  smooth_striated:            { label: '4. Epidermis Acanalada / Estriada Limpia' },
+  strangler_root_web:         { label: '5. ✨ Enredadera de Raíces Aéreas Reticuladas y Abrazadoras' },
+  rose_hooked_prickles:       { label: '6. ✨ Aguijones Ganchudos de Rosal / Zarza en Hélice' },
+  cactus_areole_spine_bursts: { label: '7. ✨ Areolas Lanosas con Estrellas de Púas Largas' },
+  armored_dragon_scales:      { label: '8. ✨ Placas / Escamas Leñosas Imbricadas de Cícada o Dragón' },
+  shelf_fungi_conks:          { label: '9. ✨ Hongos de Repisa / Yesqueros Escalonados en el Tronco' },
+  biolum_nodule_pustules:     { label: '10. ✨ Nódulos / Pústulas de Savia Bioluminiscente (Sci-Fi)' },
+};
+
+export const HANGING_ELEMENT_META: Record<HangingElementType, { label: string }> = {
+  curling_tendrils:              { label: '1. Zarcillos Enrollados en Espiral de Fibonacci' },
+  weeping_filaments:             { label: '2. Filamentos / Raíces Aéreas Finas Colgando de la Copa' },
+  mycelial_fuzz:                 { label: '3. Pelusas & Filamentos Orgánicos Suaves en Base' },
+  hanging_pods_berries:          { label: '4. Frutos / Bayas / Cápsulas Colgantes' },
+  aerial_root_curtains:          { label: '5. ✨ Cortinas de Raíces Aéreas Descendentes hasta el Suelo' },
+  winged_samara_seeds:           { label: '6. ✨ Racimos de Semillas Aladas (Sámaras) y Vainas Largas' },
+  tethered_scifi_lantern_globes: { label: '7. ✨ Globos / Farolillos Sci-Fi Bioluminiscentes Suspendidos' },
+  spanish_moss_epiphyte_drapes:  { label: '8. ✨ Barbas de Musgo Epífito / Tillandsia en Cascada' },
+  thorny_barbed_whips:           { label: '9. ✨ Látigos Rastreros con Púas y Ganchos' },
+  none:                          { label: '10. Sin Elementos Colgantes Adicionales' },
+};
+
+export const ALIEN_ARCHETYPE_META: Record<AlienArchetype, { label: string; description: string }> = {
+  mega_mushroom_terraced: {
+    label: '1. Mega-Seta Marciana en Terrazas (Laminillas + Filamentos)',
+    description: 'Estípite fúngico sinuoso con sombreros en terrazas, laminillas radiales luminosas y filamentos colgantes.',
+  },
+  spiral_fiddlehead_tentacle: {
+    label: '2. Espiral Tentacular de Ventosas Doradas',
+    description: 'Colonia de tentáculos oscuros enrollados en espiral de Fibonacci con ventosas anulares doradas.',
+  },
+  carnivorous_pitcher_colony: {
+    label: '3. Colonia de Cáliz Carnívoro / Odres Ácidos',
+    description: 'Trompetas translúcidas verde-lima y carmesí con labio peristoma acostillado sobre charco mucilaginoso.',
+  },
+  fenestrated_coral_spire: {
+    label: '4. Torre Calcárea Perforada / Árbol Esponja',
+    description: 'Pilares óseos fusionados con arcos huecos trabeculares y plataformas de coral en voladizo.',
+  },
+  cracked_ova_cluster: {
+    label: '5. Racimo de Esferas Craqueladas (Ova Xeno)',
+    description: 'Pedúnculos oscuros retorcidos que sostienen esferas bulbosas con fisuras celulares Voronoi.',
+  },
+  star_flower_caudex: {
+    label: '6. Bulbo Caudex Tentacular con Flor Estrella',
+    description: 'Bulbo basal verrugoso con látigos rastreros y tallo curvo coronado por una flor estrella carnosa de 4 puntas.',
+  },
+  azure_spore_chimneys: {
+    label: '7. Chimeneas Tubulares de Esporas Azules',
+    description: 'Colonia de tubos verticales acanalados azul eléctrico y turquesa con bocas musgosas amarillas.',
+  },
+  sap_fissure_baobab: {
+    label: '8. Baobab Xenomórfico de Savia Magmática',
+    description: 'Tronco paquicaule abombado con venas verticales de savia incandescente y rosetas suculentas apicales.',
+  },
+  spiky_mace_sentinel: {
+    label: '9. Centinela Maza Espinosa & Estrellas Aéreas',
+    description: 'Tallo estriado curvo rematado por una maza esférica erizada de largas púas y esporas estelares flotantes.',
+  },
+  crimson_coral_plume: {
+    label: '10. Pilar de Coral Abisal / Gorgonia Escarlata',
+    description: 'Arrecifes columnares cubiertos de cientos de pólipos tubulares en tonos carmesí, magenta y naranja.',
+  },
+  biolum_crater_mounds: {
+    label: '11. Domos Poro de Cráter Bioluminiscente',
+    description: 'Montículos celulares reticulados con venas rojas y bocas de cráter que emiten luz verde neón.',
+  },
+  albino_crystal_palm: {
+    label: '12. Palmera Albina de Cristal & Coral Púrpura',
+    description: 'Estípites blancos curvados con frondas plumosas dorado-melocotón y almohadillas de coral violeta en la base.',
+  },
+};
+
+export const MOSS_FUNGI_ARCHETYPE_META: Record<
+  MossFungiArchetype,
+  { label: string; description: string }
+> = {
+  velvet_moss_sporophytes: {
+    label: '1. Musgo Terciopelo & Cápsulas de Esporofitos (Bryum)',
+    description: 'Almohadillas densas de musgo esmeralda sobre roca granítica coronadas por filamentos finos y cápsulas de esporas inclinadas.',
+  },
+  star_moss_polytrichum: {
+    label: '2. Musgo Estrellado del Bosque (Polytrichum commune)',
+    description: 'Talluelos gametofíticos estrellados de 6 puntas que tapizan las grietas húmedas de la roca con esporofitos dorados.',
+  },
+  sphagnum_bog_pillow: {
+    label: '3. Cojín de Turbera Sphagnum Esmeralda & Rubí',
+    description: 'Manto botroidal esponjoso de musgo Sphagnum de humedal en tonos verde lima y puntas carmesí húmedas.',
+  },
+  amanita_muscaria_moss: {
+    label: '4. Colonia Amanita muscaria sobre Roca Musgosa',
+    description: 'Setas rojas clásicas con motas blancas 3D en relieve, laminillas inferiores y anillo membranoso emergiendo del musgo.',
+  },
+  biolum_mycena_colony: {
+    label: '5. Setas Bioluminiscentes Fantasma (Mycena chlorophos)',
+    description: 'Colonia de pequeños hongos translúcidos de bosque húmedo que emiten bioluminiscencia verde-cian sobre musgo oscuro.',
+  },
+  turkey_tail_bracket: {
+    label: '6. Hongos de Repisa Cola de Pavo (Trametes versicolor)',
+    description: 'Abanicos concéntricos escalonados en bandas ámbar, caoba y crema adheridos a los flancos de la roca musgosa.',
+  },
+  golden_enoki_cluster: {
+    label: '7. Ramillete Enoki Dorado Silvestre (Flammulina velutipes)',
+    description: 'Denso ramillete de decenas de tallos esbeltos curvados con sombreros acaramelados brillantes.',
+  },
+  pixie_cup_lichen: {
+    label: '8. Liquen Trompeta de Hadas (Cladonia pyxidata)',
+    description: 'Copas podetiales verde-glauco en forma de cáliz con apotecios escarlata en el borde sobre roca tapizada.',
+  },
+  morel_sponge_moss: {
+    label: '9. Colmenillas Alveoladas del Bosque (Morchella esculenta)',
+    description: 'Sombreros cónicos esculpidos con celdillas en panal de abeja sobre pie blanquecino y cojín de briófitos.',
+  },
+  coral_fungus_ramaria: {
+    label: '10. Hongo Coral Ramificado Dorado (Ramaria aurea)',
+    description: 'Arbusto fúngico dicotómico en tonos coral y oro emergiendo entre las almohadillas de musgo húmedo.',
+  },
+  chanterelle_golden_moss: {
+    label: '11. Rebozuelos Dorados / Cantarelas (Cantharellus cibarius)',
+    description: 'Sombreros infundibuliformes ondulados color yema de huevo con pliegues decurrentes sobre roca del bosque.',
+  },
+  puffball_birds_nest: {
+    label: '12. Bejines Perlados & Nidos de Pájaro (Lycoperdon & Cyathus)',
+    description: 'Esferas fúngicas equinuladas con poro apical junto a pequeños cuencos con peridiolos («huevos») en su interior.',
+  },
+};
+
+export const AQUATIC_ARCHETYPE_META: Record<
+  AquaticArchetype,
+  { label: string; description: string }
+> = {
+  staghorn_acropora: {
+    label: '1. Coral Cuerno de Ciervo (Acropora cervicornis)',
+    description: 'Ramas calcáreas dicotómicas con cientos de coralitos radiales y puntas apicales de crecimiento rápido.',
+  },
+  brain_coral_boulder: {
+    label: '2. Coral Cerebro Laberíntico (Diploria labyrinthiformis)',
+    description: 'Domos masivos esculpidos con meandros y crestas sinuosas biomineralizadas sobre lecho de arrecife.',
+  },
+  gorgonian_sea_fan: {
+    label: '3. Abanico de Mar Gorgonia (Gorgonia ventalina)',
+    description: 'Redes laminares planas en abanico orientadas perpendicularmente a la corriente marina.',
+  },
+  tube_sponge_cluster: {
+    label: '4. Colonia de Esponjas Tubulares (Aplysina archeri)',
+    description: 'Chimeneas orgánicas huecas con ósculos biselados y textura porosa en tonos púrpura o amarillo neón.',
+  },
+  giant_kelp_forest: {
+    label: '5. Bosque de Kelp Gigante (Macrocystis pyrifera)',
+    description: 'Estípites flexibles con flotadores pneumatocistos y grandes láminas onduladas mecidas por la corriente.',
+  },
+  bull_kelp_whip: {
+    label: '6. Látigo Kelp Toro / Nereocystis (Nereocystis luetkeana)',
+    description: 'Tallos largos rematados por un bulbo flotador esférico del que brotan cintas foliares en penacho.',
+  },
+  sea_anemone_tentacles: {
+    label: '7. Anémona Marina & Corona Tentacular (Actiniaria)',
+    description: 'Columna pedal muscular coronada por anillos concéntricos de tentáculos con puntas nematocisto brillantes.',
+  },
+  plate_montipora_whorl: {
+    label: '8. Coral Plato en Espiral (Montipora capricornis)',
+    description: 'Terrazas laminares concéntricas con bordes ondulados en roseta sobre pedestal central.',
+  },
+  pillar_organ_pipe_coral: {
+    label: '9. Coral Tubo de Órgano & Pólipos Estrella (Tubipora musica)',
+    description: 'Racimo de tubos calcáreos carmesí coronados por pólipos octocorales estrellados de 8 brazos.',
+  },
+  red_seaweed_dulse: {
+    label: '10. Alga Roja Dulse & Abanicos Marinos (Palmaria palmata)',
+    description: 'Láminas membranosas bifurcadas con bordes rizados translúcidos en tonos carmesí y rubí.',
+  },
+  bladder_wrack_sargassum: {
+    label: '11. Sargazo & Alga Vejiga (Sargassum / Fucus)',
+    description: 'Frondas marinas bifurcadas con vesículas aeríferas doradas flotantes a lo largo del nervio central.',
+  },
+  seagrass_posidonia_meadow: {
+    label: '12. Pradera Submarina de Posidonia (Posidonia oceanica)',
+    description: 'Haz denso de cintas verdes esmeralda arqueadas por la corriente sobre roca arenosa de arrecife.',
+  },
+};
+
+export const TONAL_SHADER_META: Record<
+  TonalShaderMode,
+  { label: string; short: string; description: string }
+> = {
+  natural_botanical: {
+    label: 'PBR Botánico Realista + Translucidez Subsuperficial',
+    short: 'Botánico PBR',
+    description: 'Dispersión subsuperficial natural en bordes de hojas y corteza micro-texturizada.',
+  },
+  bioluminescent_abyss: {
+    label: 'Bioluminiscencia Abisal (Pulso Emisivo + Halo Fresnel)',
+    short: 'Bioluminiscente',
+    description: 'Nervaduras luminiscentes con pulso orgánico y bordes brillantes de alto contraste.',
+  },
+  voronoi_cracked: {
+    label: 'Células Craqueladas Voronoi / Savia Incandescente',
+    short: 'Craquelado Voronoi',
+    description: 'Red celular 3D procedural con fisuras oscuras o magma emisivo (ideal para esferas ova y domos).',
+  },
+  iridescent_chitin: {
+    label: 'Quitina Iridiscente / Exoesqueleto Alienígena',
+    short: 'Iridiscente',
+    description: 'Cambio cromático angular de película delgada con reflejos metálicos nacarados.',
+  },
+  translucent_jelly: {
+    label: 'Gelatina Ácida / Mucílago Húmedo (Clearcoat Alto)',
+    short: 'Gelatina Húmeda',
+    description: 'Superficie brillante húmeda con transmisión luminosa interna para plantas carnívoras y hongos.',
+  },
+  tri_tone_xenogradient: {
+    label: 'Gradiente Tricolor Xenobotánico (Base → Medio → Ápice)',
+    short: 'Tricolor Xeno',
+    description: 'Transición cromática suave en 3 bandas a lo largo de la altura total de la planta.',
+  },
+  striated_banded: {
+    label: 'Bandas Estriadas / Anillos Minerales',
+    short: 'Estrías Minerales',
+    description: 'Estratos ondulados de pigmento mineral en tallos, sombreros y corales.',
+  },
+  cel_concept_art: {
+    label: 'Ilustración Concept Art Sci-Fi (Cel-Shading + Tinta)',
+    short: 'Concept Art Cel',
+    description: 'Bandas tonales cuantizadas y contorno de tinta estilo ilustración Moebius.',
+  },
+  spectral_thermal: {
+    label: 'Espectro Térmico Exobiológico (UV / Infrarrojo)',
+    short: 'Espectral UV',
+    description: 'Mapa espectral continuo desde violeta abisal en la base hasta oro solar en las puntas.',
+  },
+};
+
+export const TONAL_PALETTE_PRESETS: TonalPalettePreset[] = [
+  {
+    id: 'pandora_biolum',
+    name: 'Bioluminiscencia Pandora',
+    badge: 'Neón Cian/Violeta',
+    tonalMode: 'bioluminescent_abyss',
+    colorTrunk: '#1e1b4b',
+    colorLeafMain: '#4338ca',
+    colorLeafTip: '#22d3ee',
+    colorFlower: '#f472b6',
+    colorAccent: '#00f5d4',
+    emissiveIntensity: 0.95,
+    iridescenceAmount: 0.45,
+    patternScale: 1.1,
+    patternContrast: 0.65,
+    wetnessGloss: 0.4,
+  },
+  {
+    id: 'voronoi_ivory_ova',
+    name: 'Esfera Craquelada Marfil',
+    badge: 'Voronoi Folio 1',
+    tonalMode: 'voronoi_cracked',
+    colorTrunk: '#291d18',
+    colorLeafMain: '#f5f5f4',
+    colorLeafTip: '#fde68a',
+    colorFlower: '#78350f',
+    colorAccent: '#451a03',
+    emissiveIntensity: 0.08,
+    iridescenceAmount: 0.1,
+    patternScale: 1.35,
+    patternContrast: 0.88,
+    wetnessGloss: 0.55,
+  },
+  {
+    id: 'voronoi_cobalt_ova',
+    name: 'Ova Cobalto Abisal',
+    badge: 'Voronoi Folio 2',
+    tonalMode: 'voronoi_cracked',
+    colorTrunk: '#090d16',
+    colorLeafMain: '#6366f1',
+    colorLeafTip: '#93c5fd',
+    colorFlower: '#38bdf8',
+    colorAccent: '#1e1b4b',
+    emissiveIntensity: 0.35,
+    iridescenceAmount: 0.35,
+    patternScale: 1.45,
+    patternContrast: 0.9,
+    wetnessGloss: 0.6,
+  },
+  {
+    id: 'acid_pitcher_jelly',
+    name: 'Mucílago Ácido Carnívoro',
+    badge: 'Gelatina Folio 1',
+    tonalMode: 'translucent_jelly',
+    colorTrunk: '#3f6212',
+    colorLeafMain: '#65a30d',
+    colorLeafTip: '#bef264',
+    colorFlower: '#ea580c',
+    colorAccent: '#dc2626',
+    emissiveIntensity: 0.55,
+    iridescenceAmount: 0.25,
+    patternScale: 1.0,
+    patternContrast: 0.5,
+    wetnessGloss: 0.92,
+  },
+  {
+    id: 'martian_terracotta_spore',
+    name: 'Mega-Seta Marciana',
+    badge: 'Terracota Folio 1',
+    tonalMode: 'striated_banded',
+    colorTrunk: '#27272a',
+    colorLeafMain: '#9a3412',
+    colorLeafTip: '#fb923c',
+    colorFlower: '#fde047',
+    colorAccent: '#f97316',
+    emissiveIntensity: 0.5,
+    iridescenceAmount: 0.2,
+    patternScale: 1.2,
+    patternContrast: 0.7,
+    wetnessGloss: 0.3,
+  },
+  {
+    id: 'fiddlehead_gold_obsidian',
+    name: 'Espiral Obsidiana & Oro',
+    badge: 'Tentáculo Folio 1',
+    tonalMode: 'iridescent_chitin',
+    colorTrunk: '#18181b',
+    colorLeafMain: '#27272a',
+    colorLeafTip: '#ca8a04',
+    colorFlower: '#facc15',
+    colorAccent: '#eab308',
+    emissiveIntensity: 0.45,
+    iridescenceAmount: 0.75,
+    patternScale: 1.0,
+    patternContrast: 0.6,
+    wetnessGloss: 0.65,
+  },
+  {
+    id: 'crater_neon_magma',
+    name: 'Cráter Poro Verde Neón',
+    badge: 'Magma Folio 3',
+    tonalMode: 'voronoi_cracked',
+    colorTrunk: '#0f172a',
+    colorLeafMain: '#115e59',
+    colorLeafTip: '#4ade80',
+    colorFlower: '#22c55e',
+    colorAccent: '#e11d48',
+    emissiveIntensity: 0.95,
+    iridescenceAmount: 0.25,
+    patternScale: 1.25,
+    patternContrast: 0.92,
+    wetnessGloss: 0.5,
+  },
+  {
+    id: 'crimson_gorgonian_reef',
+    name: 'Coral Escarlata Abisal',
+    badge: 'Coral Folio 3',
+    tonalMode: 'tri_tone_xenogradient',
+    colorTrunk: '#4c0519',
+    colorLeafMain: '#be123c',
+    colorLeafTip: '#fb7185',
+    colorFlower: '#fda4af',
+    colorAccent: '#f43f5e',
+    emissiveIntensity: 0.45,
+    iridescenceAmount: 0.3,
+    patternScale: 1.0,
+    patternContrast: 0.6,
+    wetnessGloss: 0.55,
+  },
+  {
+    id: 'azure_chimney_cyan',
+    name: 'Chimenea Azul Eléctrico',
+    badge: 'Tubo Folio 2',
+    tonalMode: 'bioluminescent_abyss',
+    colorTrunk: '#0369a1',
+    colorLeafMain: '#0284c7',
+    colorLeafTip: '#38bdf8',
+    colorFlower: '#a3e635',
+    colorAccent: '#bef264',
+    emissiveIntensity: 0.65,
+    iridescenceAmount: 0.2,
+    patternScale: 1.3,
+    patternContrast: 0.6,
+    wetnessGloss: 0.35,
+  },
+  {
+    id: 'calcified_desert_spire',
+    name: 'Caliza Perforada Albina',
+    badge: 'Esponja Folio 3',
+    tonalMode: 'striated_banded',
+    colorTrunk: '#d6d3d1',
+    colorLeafMain: '#e7e5e4',
+    colorLeafTip: '#fde68a',
+    colorFlower: '#f59e0b',
+    colorAccent: '#a8a29e',
+    emissiveIntensity: 0.12,
+    iridescenceAmount: 0.1,
+    patternScale: 0.9,
+    patternContrast: 0.55,
+    wetnessGloss: 0.15,
+  },
+  {
+    id: 'moebius_concept_cel',
+    name: 'Concept Art Moebius (Cel)',
+    badge: 'Ilustración Sci-Fi',
+    tonalMode: 'cel_concept_art',
+    colorTrunk: '#312e81',
+    colorLeafMain: '#0d9488',
+    colorLeafTip: '#5eead4',
+    colorFlower: '#f43f5e',
+    colorAccent: '#fde047',
+    emissiveIntensity: 0.35,
+    iridescenceAmount: 0.2,
+    patternScale: 1.0,
+    patternContrast: 0.7,
+    wetnessGloss: 0.1,
+  },
+  {
+    id: 'exobiological_thermal',
+    name: 'Espectro Térmico UV',
+    badge: 'Infrarrojo',
+    tonalMode: 'spectral_thermal',
+    colorTrunk: '#1e1b4b',
+    colorLeafMain: '#06b6d4',
+    colorLeafTip: '#f43f5e',
+    colorFlower: '#fde047',
+    colorAccent: '#ec4899',
+    emissiveIntensity: 0.65,
+    iridescenceAmount: 0.5,
+    patternScale: 1.0,
+    patternContrast: 0.6,
+    wetnessGloss: 0.35,
+  },
+];
+
+export const BACKGROUND_PRESETS: BackgroundPreset[] = [
+  { id: 'dark_studio', name: 'Estudio Oscuro', bg: '#0c131d', ground: '#101824' },
+  { id: 'abyss_biolum', name: 'Abismo Bioluminiscente', bg: '#040a12', ground: '#061320' },
+  { id: 'martian_dusk', name: 'Atardecer Marciano', bg: '#2b120c', ground: '#381911' },
+  { id: 'sulfur_mist', name: 'Niebla Sulfúrica', bg: '#182214', ground: '#141d10' },
+  { id: 'exo_saltflat', name: 'Salar Exoplanetario', bg: '#cfc7b8', ground: '#b5ab99' },
+  { id: 'coastal_sky', name: 'Costa Tropical / Albina', bg: '#2c699a', ground: '#d4b88c' },
+  { id: 'coral_reef_turquoise', name: 'Arrecife Turquesa', bg: '#084c61', ground: '#0b3847' },
+  { id: 'kelp_emerald_depth', name: 'Bosque Kelp Profundo', bg: '#062c30', ground: '#082026' },
+  { id: 'abyssal_trench', name: 'Fosa Abisal Biolum.', bg: '#020817', ground: '#040d21' },
+  { id: 'daylight_arch', name: 'Cielo Arquitectónico', bg: '#dbeafe', ground: '#cbd5e1' },
+  { id: 'pure_white', name: 'Blanco Puro CAD', bg: '#f8fafc', ground: '#e2e8f0' },
+];
+
+export const ECOSYSTEM_BASE_META: Record<
+  EcosystemBaseType,
+  { label: string; short: string; description: string; swatchA: string; swatchB: string }
+> = {
+  auto: {
+    label: 'Automática según Especie (Integrada)',
+    short: 'Auto Bioma',
+    description: 'Adapta automáticamente la base 3D al hábitat natural de la especie seleccionada.',
+    swatchA: '#10b981',
+    swatchB: '#0ea5e9',
+  },
+  temperate_forest: {
+    label: 'Bosque Templado (Humus, Rocas & Hierba)',
+    short: 'Bosque',
+    description: 'Suelo orgánico ondulado con tierra de sotobosque, piedras redondeadas y matas de hierba.',
+    swatchA: '#3f6212',
+    swatchB: '#4a3728',
+  },
+  mossy_forest_floor: {
+    label: 'Lecho Musgoso Húmedo (Briófitos & Pizarra)',
+    short: 'Lecho Musgo',
+    description: 'Claro húmedo del bosque con almohadillas de musgo, humus oscuro y lajas de pizarra.',
+    swatchA: '#15803d',
+    swatchB: '#334155',
+  },
+  aquatic_reef_seabed: {
+    label: 'Fondo Marino & Arrecife (Arena & Caliza)',
+    short: 'Arrecife 3D',
+    description: 'Arena marina ondulada por la corriente, terrazas coralinas calcáreas y guijarros de fondo.',
+    swatchA: '#0891b2',
+    swatchB: '#cbd5e1',
+  },
+  alpine_granite: {
+    label: 'Roca Alpina & Pizarra (Granito & Líquenes)',
+    short: 'Alpina/Roca',
+    description: 'Plataforma montañosa escarpada con bloques de granito, grava alpina y líquenes.',
+    swatchA: '#64748b',
+    swatchB: '#78716c',
+  },
+  desert_dunes: {
+    label: 'Desierto Árido (Dunas & Arenisca Roja)',
+    short: 'Desierto',
+    description: 'Dunas de arena rizadas por el viento con lajas de arenisca rojiza y grava seca.',
+    swatchA: '#d97706',
+    swatchB: '#9a3412',
+  },
+  exoplanetary_crater: {
+    label: 'Cráter Exoplanetario (Basalto & Cristales)',
+    short: 'Cráter Xeno',
+    description: 'Relieve basáltico radial con grietas minerales y cristales luminiscentes emergiendo del borde.',
+    swatchA: '#312e81',
+    swatchB: '#a855f7',
+  },
+  clean_pedestal: {
+    label: 'Pedestal Estudio Limpio (CAD / Maqueta)',
+    short: 'Estudio CAD',
+    description: 'Disco cilíndrico uniforme de estudio sin relieves para inspección técnica pura.',
+    swatchA: '#1e293b',
+    swatchB: '#0f172a',
+  },
+};
+
+export const DEFAULT_TREE_PARAMS: TreeParams = {
+  presetId: 'birch_florasynth',
+  seed: 4210,
+  engine: 'sympodial',
+  alienArchetype: 'mega_mushroom_terraced',
+  mossFungiArchetype: 'amanita_muscaria_moss',
+  aquaticArchetype: 'staghorn_acropora',
+  rockScale: 1.0,
+  rockRoughness: 0.65,
+  mossCoverage: 0.82,
+  representationStyle: 'botanical_leaves',
+  crownShape: 'tapered_cylinder',
+  canopyOpacity: 1.0,
+  metaballThreshold: 0.95,
+  metaballResolution: 18,
+  clusterNoise: 0.25,
+  clusterFlatten: 0.25,
+  smoothShading: true,
+  radialSegments: 10,
+  curveSteps: 4,
+  subdivisionDetail: 1,
+  levels: 4,
+  height: 6.4,
+  trunkClearHeight: 0.28,
+  crownWidthRatio: 0.38,
+  radius: 0.26,
+  taper: 0.72,
+  flare: 0.32,
+  showRoots: true,
+  rootCount: 5,
+  rootLength: 1.2,
+  rootThickness: 1.0,
+  rootArch: 0.28,
+  angle: 34,
+  decay: 0.76,
+  noise: 0.22,
+  gravity: -0.08,
+  apicalDominance: 0.68,
+  gnarl: 0.16,
+  branchCount: 3,
+  trunkSplitHeight: 0.30,
+  pruneRatio: 0.15,
+  foliageType: 'broadleaf_ovate',
+  leafScale: 1.25,
+  leafDensity: 4,
+  leafWidthRatio: 0.65,
+  leafBend: 0.28,
+  barkType: 'birch_paper',
+  barkRoughness: 0.65,
+  colorTrunk: '#e2e8f0',
+  colorLeafMain: '#4d7c0f',
+  colorLeafTip: '#bef264',
+  colorFlower: '#d9f99d',
+  colorAccent: '#38bdf8',
+  tonalMode: 'natural_botanical',
+  emissiveIntensity: 0.2,
+  iridescenceAmount: 0.15,
+  patternScale: 1.0,
+  patternContrast: 0.55,
+  wetnessGloss: 0.15,
+  hueShift: 0,
+  needleLength: 1.0,
+  needleDensity: 9,
+  fascicleCount: 3,
+  needleSpreadAngle: 38,
+  pineConeDensity: 0.35,
+  whorlBranches: 5,
+  cactusSubType: 'saguaro',
+  cactusRibs: 12,
+  ribDepth: 0.14,
+  armCount: 4,
+  armSpread: 0.85,
+  armHeightMin: 0.32,
+  armElbowCurve: 0.65,
+  subArmProb: 0.35,
+  spineDensity: 1.2,
+  spineLength: 1.0,
+  spinesPerAreole: 6,
+  colorSpine: '#fef08a',
+  cactusFlowerCount: 4,
+  season: 'summer',
+  windEnabled: true,
+  windStrength: 0.42,
+  windTurbulence: 0.32,
+  sunElevation: 52,
+  sunAzimuth: 42,
+};
+
+export const SPECIES_CATALOG: SpeciesPreset[] = [
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 1. FRONDOSOS & PLANIFOLIOS (FLORASYNTH / TREE3D-WEB / WISKERED)
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    id: 'birch_florasynth',
+    name: 'Abedul Plateado (Florasynth Birch)',
+    scientificName: 'Betula pendula',
+    category: 'Frondosos & Planifolios',
+    description: 'Inspirado en PRESET_Birch de Florasynth: corteza blanca papirácea con lenticelas oscuras, dominancia apical esbelta y hojas romboidales.',
+    params: {
+      engine: 'sympodial', crownShape: 'tapered_cylinder',
+      levels: 4, height: 6.5, trunkClearHeight: 0.28, crownWidthRatio: 0.36, radius: 0.25, taper: 0.72, flare: 0.3,
+      angle: 33, decay: 0.76, noise: 0.22, gravity: -0.08, apicalDominance: 0.72, gnarl: 0.16, branchCount: 3,
+      foliageType: 'broadleaf_ovate', barkType: 'birch_paper',
+      leafScale: 1.25, leafDensity: 4, leafWidthRatio: 0.65, leafBend: 0.28,
+      colorTrunk: '#e2e8f0', colorLeafMain: '#4d7c0f', colorLeafTip: '#bef264', colorFlower: '#d9f99d'
+    }
+  },
+  {
+    id: 'oak_english',
+    name: 'Roble Europeo (English Oak)',
+    scientificName: 'Quercus robur',
+    category: 'Frondosos & Planifolios',
+    description: 'Tronco robusto con raíces tabulares, copa hemisférica ancha y hojas lobuladas características.',
+    params: {
+      engine: 'sympodial', crownShape: 'spherical',
+      levels: 4, height: 5.4, trunkClearHeight: 0.26, crownWidthRatio: 0.55, radius: 0.52, taper: 0.68, flare: 0.55, rootCount: 7,
+      angle: 44, decay: 0.76, noise: 0.34, gravity: 0.10, apicalDominance: 0.42, gnarl: 0.32, branchCount: 3, trunkSplitHeight: 0.35,
+      foliageType: 'broadleaf_lobed', barkType: 'fissured',
+      leafScale: 1.45, leafDensity: 4, leafWidthRatio: 0.68, leafBend: 0.25,
+      colorTrunk: '#4d3624', colorLeafMain: '#2d6a4f', colorLeafTip: '#74c69d', colorFlower: '#a3e635'
+    }
+  },
+  {
+    id: 'tree3d_metaball_oak',
+    name: 'Roble Volumétrico (Tree3D Metaballs)',
+    scientificName: 'Quercus × volumetric',
+    category: 'Frondosos & Planifolios',
+    description: 'Estilo nativo de Andrew Marsh Tree3D-Web: extracción de iso-superficie Metaballs continua sobre el esqueleto ramificado.',
+    params: {
+      engine: 'sympodial', representationStyle: 'metaball_isosurface', crownShape: 'spherical',
+      metaballThreshold: 0.92, metaballResolution: 19, clusterNoise: 0.28, clusterFlatten: 0.28, canopyOpacity: 0.94,
+      levels: 4, height: 5.6, trunkClearHeight: 0.30, crownWidthRatio: 0.52, radius: 0.46, taper: 0.68, flare: 0.48,
+      angle: 42, decay: 0.76, noise: 0.28, gravity: 0.08, apicalDominance: 0.48, gnarl: 0.22, branchCount: 3,
+      foliageType: 'broadleaf_lobed', barkType: 'fissured',
+      leafScale: 1.5, leafDensity: 4,
+      colorTrunk: '#523a28', colorLeafMain: '#2d6a4f', colorLeafTip: '#86efac', colorFlower: '#bbf7d0'
+    }
+  },
+  {
+    id: 'aspen_quaking',
+    name: 'Álamo Temblón (Quaking Aspen)',
+    scientificName: 'Populus tremuloides',
+    category: 'Frondosos & Planifolios',
+    description: 'Fuste alto blanquecino con copa flama dorada otoñal y hojas cordiformes vibrantes.',
+    params: {
+      engine: 'sympodial', crownShape: 'flame',
+      levels: 4, height: 7.0, trunkClearHeight: 0.38, crownWidthRatio: 0.30, radius: 0.26, taper: 0.74, flare: 0.28,
+      angle: 30, decay: 0.74, noise: 0.16, gravity: 0.18, apicalDominance: 0.80, gnarl: 0.12, branchCount: 3,
+      foliageType: 'broadleaf_heart', barkType: 'birch_paper',
+      leafScale: 1.2, leafDensity: 4, leafWidthRatio: 0.78, leafBend: 0.22,
+      colorTrunk: '#cbd5e1', colorLeafMain: '#ca8a04', colorLeafTip: '#fef08a', colorFlower: '#fde047'
+    }
+  },
+  {
+    id: 'maple_japanese',
+    name: 'Arce Japonés Rojo (Japanese Maple)',
+    scientificName: 'Acer palmatum',
+    category: 'Frondosos & Planifolios',
+    description: 'Arquitectura escultural sinuosa en umbela con hojas palmadas de 5 puntas en tonos carmesí.',
+    params: {
+      engine: 'sympodial', crownShape: 'umbrella',
+      levels: 4, height: 4.2, trunkClearHeight: 0.24, crownWidthRatio: 0.56, radius: 0.34, taper: 0.70, flare: 0.4,
+      angle: 48, decay: 0.78, noise: 0.38, gravity: 0.08, apicalDominance: 0.35, gnarl: 0.42, branchCount: 3, trunkSplitHeight: 0.3,
+      foliageType: 'broadleaf_palmate', barkType: 'smooth_ash',
+      leafScale: 1.35, leafDensity: 4, leafWidthRatio: 0.85, leafBend: 0.2,
+      colorTrunk: '#4a3b34', colorLeafMain: '#881337', colorLeafTip: '#f43f5e', colorFlower: '#fb7185'
+    }
+  },
+  {
+    id: 'maple_sugar',
+    name: 'Arce Real / Azucarero (Sugar Maple)',
+    scientificName: 'Acer saccharum',
+    category: 'Frondosos & Planifolios',
+    description: 'Copa densa ovalada de hojas palmadas vibrantes en tonos ámbar y escarlata.',
+    params: {
+      engine: 'sympodial', crownShape: 'spherical',
+      levels: 4, height: 5.8, trunkClearHeight: 0.28, crownWidthRatio: 0.46, radius: 0.44, taper: 0.70, flare: 0.45,
+      angle: 38, decay: 0.78, noise: 0.24, gravity: 0.14, apicalDominance: 0.58, gnarl: 0.18, branchCount: 3,
+      foliageType: 'broadleaf_palmate', barkType: 'fissured',
+      leafScale: 1.5, leafDensity: 4, leafWidthRatio: 0.82, leafBend: 0.22,
+      colorTrunk: '#432818', colorLeafMain: '#b45309', colorLeafTip: '#fbbf24', colorFlower: '#fde047'
+    }
+  },
+  {
+    id: 'beech_european',
+    name: 'Haya Europea (European Beech)',
+    scientificName: 'Fagus sylvatica',
+    category: 'Frondosos & Planifolios',
+    description: 'Corteza lisa gris plateada y bóveda foliar hemisférica de hojas ovaladas nervadas.',
+    params: {
+      engine: 'sympodial', crownShape: 'hemispherical',
+      levels: 4, height: 5.8, trunkClearHeight: 0.25, crownWidthRatio: 0.50, radius: 0.46, taper: 0.70, flare: 0.5,
+      angle: 38, decay: 0.78, noise: 0.20, gravity: 0.15, apicalDominance: 0.55, gnarl: 0.16, branchCount: 3,
+      foliageType: 'broadleaf_ovate', barkType: 'smooth_ash',
+      leafScale: 1.55, leafDensity: 5, leafWidthRatio: 0.62, leafBend: 0.18,
+      colorTrunk: '#64748b', colorLeafMain: '#365314', colorLeafTip: '#84cc16', colorFlower: '#bef264'
+    }
+  },
+  {
+    id: 'willow_weeping',
+    name: 'Sauce Llorón (Weeping Willow)',
+    scientificName: 'Salix babylonica',
+    category: 'Frondosos & Planifolios',
+    description: 'Ramas arqueadas con largas cortinas colgantes de hojas lanceoladas mecidas por la brisa.',
+    params: {
+      engine: 'weeping', crownShape: 'hemispherical',
+      levels: 4, height: 4.8, trunkClearHeight: 0.25, crownWidthRatio: 0.58, radius: 0.46, taper: 0.68, flare: 0.48,
+      angle: 42, decay: 0.82, noise: 0.26, gravity: -0.52, apicalDominance: 0.40, gnarl: 0.25, branchCount: 3,
+      foliageType: 'weeping_strands', barkType: 'fissured',
+      leafScale: 1.4, leafDensity: 5, leafWidthRatio: 0.32, leafBend: 0.45,
+      colorTrunk: '#57493a', colorLeafMain: '#4d7c0f', colorLeafTip: '#a3e635', colorFlower: '#d9f99d'
+    }
+  },
+  {
+    id: 'ginkgo_biloba',
+    name: 'Ginkgo Dorado (Maidenhair Tree)',
+    scientificName: 'Ginkgo biloba',
+    category: 'Frondosos & Planifolios',
+    description: 'Árbol fósil viviente con exclusivas hojas flabeladas en forma de abanico bilobulado.',
+    params: {
+      engine: 'sympodial', crownShape: 'conical',
+      levels: 4, height: 6.0, trunkClearHeight: 0.26, crownWidthRatio: 0.44, radius: 0.42, taper: 0.70, flare: 0.42,
+      angle: 36, decay: 0.76, noise: 0.24, gravity: 0.16, apicalDominance: 0.65, gnarl: 0.22, branchCount: 3,
+      foliageType: 'broadleaf_ginkgo', barkType: 'fissured',
+      leafScale: 1.35, leafDensity: 4, leafWidthRatio: 0.9, leafBend: 0.2,
+      colorTrunk: '#524135', colorLeafMain: '#ca8a04', colorLeafTip: '#fde047', colorFlower: '#fef08a'
+    }
+  },
+  {
+    id: 'olive_mediterranean',
+    name: 'Olivo Centenario (Mediterranean Olive)',
+    scientificName: 'Olea europaea',
+    category: 'Frondosos & Planifolios',
+    description: 'Tronco retorcido y nudoso con hojas lanceoladas verde grisáceo de envés plateado.',
+    params: {
+      engine: 'sympodial', crownShape: 'umbrella',
+      levels: 4, height: 3.8, trunkClearHeight: 0.28, crownWidthRatio: 0.58, radius: 0.56, taper: 0.64, flare: 0.65, rootCount: 8,
+      angle: 52, decay: 0.74, noise: 0.45, gravity: 0.08, apicalDominance: 0.30, gnarl: 0.55, branchCount: 3, trunkSplitHeight: 0.28,
+      foliageType: 'broadleaf_lanceolate', barkType: 'fissured',
+      leafScale: 1.25, leafDensity: 4, leafWidthRatio: 0.34, leafBend: 0.2,
+      colorTrunk: '#4a4036', colorLeafMain: '#3f6212', colorLeafTip: '#a3b18a', colorFlower: '#ecfccb'
+    }
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 2. CONÍFERAS (PINOS, ABETOS, PICEAS, CEDROS, SECUOYAS)
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    id: 'pine_scots',
+    name: 'Pino Silvestre (Scots Pine)',
+    scientificName: 'Pinus sylvestris',
+    category: 'Coníferas & Aciculares',
+    description: 'Corteza superior anaranjada-rojiza en placas y acículas geminadas en fascículos densos con piñas.',
+    params: {
+      engine: 'monopodial', crownShape: 'conical',
+      levels: 4, height: 6.8, trunkClearHeight: 0.22, crownWidthRatio: 0.38, radius: 0.36, taper: 0.68, flare: 0.4,
+      angle: 64, decay: 0.72, noise: 0.18, gravity: -0.05, gnarl: 0.25, whorlBranches: 5,
+      foliageType: 'needles_fascicle', barkType: 'pine_plates',
+      leafScale: 1.4, leafDensity: 4, needleLength: 1.15, needleDensity: 10, fascicleCount: 3, needleSpreadAngle: 42, pineConeDensity: 0.45,
+      colorTrunk: '#6b3e26', colorLeafMain: '#1b4332', colorLeafTip: '#52b788', colorFlower: '#78350f'
+    }
+  },
+  {
+    id: 'pine_stone',
+    name: 'Pino Piñonero (Stone Pine)',
+    scientificName: 'Pinus pinea',
+    category: 'Coníferas & Aciculares',
+    description: 'Característica copa aparasolada mediterránea con tronco limpio y fascículos de agujas largas.',
+    params: {
+      engine: 'sympodial', crownShape: 'umbrella',
+      levels: 4, height: 6.2, trunkClearHeight: 0.52, crownWidthRatio: 0.62, radius: 0.44, taper: 0.72, flare: 0.45, trunkSplitHeight: 0.55,
+      angle: 48, decay: 0.74, noise: 0.22, gravity: 0.18, apicalDominance: 0.32, gnarl: 0.2, branchCount: 4,
+      foliageType: 'needles_fascicle', barkType: 'pine_plates',
+      leafScale: 1.55, leafDensity: 5, needleLength: 1.35, needleDensity: 11, fascicleCount: 2, needleSpreadAngle: 48, pineConeDensity: 0.5,
+      colorTrunk: '#5c3824', colorLeafMain: '#234d20', colorLeafTip: '#65a30d', colorFlower: '#713f12'
+    }
+  },
+  {
+    id: 'fir_silver',
+    name: 'Abeto Blanco (Silver Fir)',
+    scientificName: 'Abies alba',
+    category: 'Coníferas & Aciculares',
+    description: 'Porte piramidal majestuoso con agujas planas pectinadas en doble hilera y piñas erguidas.',
+    params: {
+      engine: 'monopodial', crownShape: 'conical',
+      levels: 4, height: 7.2, trunkClearHeight: 0.14, crownWidthRatio: 0.36, radius: 0.34, taper: 0.62, flare: 0.35,
+      angle: 74, decay: 0.72, noise: 0.06, gravity: -0.08, gnarl: 0.08, whorlBranches: 6,
+      foliageType: 'needles_pectinate', barkType: 'smooth_ash',
+      leafScale: 1.35, leafDensity: 5, needleLength: 0.85, needleDensity: 12, fascicleCount: 2, needleSpreadAngle: 72, pineConeDensity: 0.4,
+      colorTrunk: '#4a453e', colorLeafMain: '#133829', colorLeafTip: '#4d9078', colorFlower: '#7c2d12'
+    }
+  },
+  {
+    id: 'fir_nordmann',
+    name: 'Abeto de Nordmann (Caucasian Fir)',
+    scientificName: 'Abies nordmanniana',
+    category: 'Coníferas & Aciculares',
+    description: 'Follaje denso desde la base con acículas brillantes dispuestas en peine sobre pisos horizontales.',
+    params: {
+      engine: 'monopodial', crownShape: 'conical',
+      levels: 4, height: 6.5, trunkClearHeight: 0.10, crownWidthRatio: 0.38, radius: 0.32, taper: 0.60, flare: 0.32,
+      angle: 78, decay: 0.74, noise: 0.05, gravity: -0.12, gnarl: 0.05, whorlBranches: 6,
+      foliageType: 'needles_pectinate', barkType: 'smooth_ash',
+      leafScale: 1.45, leafDensity: 5, needleLength: 0.9, needleDensity: 13, fascicleCount: 2, needleSpreadAngle: 75, pineConeDensity: 0.35,
+      colorTrunk: '#3f3a34', colorLeafMain: '#0f392b', colorLeafTip: '#34d399', colorFlower: '#854d0e'
+    }
+  },
+  {
+    id: 'spruce_norway',
+    name: 'Picea de Noruega (Norway Spruce)',
+    scientificName: 'Picea abies',
+    category: 'Coníferas & Aciculares',
+    description: 'Ramas arqueadas con ramillas colgantes cubiertas en 360° por agujas cortas cuadrangulares.',
+    params: {
+      engine: 'monopodial', crownShape: 'conical',
+      levels: 4, height: 7.4, trunkClearHeight: 0.14, crownWidthRatio: 0.35, radius: 0.35, taper: 0.62, flare: 0.42,
+      angle: 68, decay: 0.70, noise: 0.08, gravity: -0.22, gnarl: 0.1, whorlBranches: 5,
+      foliageType: 'needles_radial', barkType: 'pine_plates',
+      leafScale: 1.3, leafDensity: 5, needleLength: 0.68, needleDensity: 12, fascicleCount: 4, needleSpreadAngle: 55, pineConeDensity: 0.55,
+      colorTrunk: '#4a3525', colorLeafMain: '#1c3b2b', colorLeafTip: '#5a9e6f', colorFlower: '#92400e'
+    }
+  },
+  {
+    id: 'spruce_blue',
+    name: 'Picea Azul de Colorado (Blue Spruce)',
+    scientificName: 'Picea pungens glauca',
+    category: 'Coníferas & Aciculares',
+    description: 'Agujas rígidas glauco-azuladas dispuestas radialmente en pisos simétricos densos.',
+    params: {
+      engine: 'monopodial', crownShape: 'conical',
+      levels: 4, height: 6.2, trunkClearHeight: 0.12, crownWidthRatio: 0.36, radius: 0.32, taper: 0.62, flare: 0.35,
+      angle: 76, decay: 0.68, noise: 0.05, gravity: -0.04, gnarl: 0.06, whorlBranches: 6,
+      foliageType: 'needles_radial', barkType: 'pine_plates',
+      leafScale: 1.25, leafDensity: 5, needleLength: 0.72, needleDensity: 13, fascicleCount: 4, needleSpreadAngle: 60, pineConeDensity: 0.3,
+      colorTrunk: '#473c38', colorLeafMain: '#1e4e5f', colorLeafTip: '#7dd3fc', colorFlower: '#a16207'
+    }
+  },
+  {
+    id: 'cedar_lebanon',
+    name: 'Cedro del Líbano (Cedar of Lebanon)',
+    scientificName: 'Cedrus libani',
+    category: 'Coníferas & Aciculares',
+    description: 'Grandes pisos horizontales estratificados con rosetas de acículas en braquiblastos.',
+    params: {
+      engine: 'monopodial', crownShape: 'umbrella',
+      levels: 4, height: 6.8, trunkClearHeight: 0.22, crownWidthRatio: 0.48, radius: 0.52, taper: 0.68, flare: 0.55,
+      angle: 82, decay: 0.76, noise: 0.16, gravity: 0.02, gnarl: 0.25, whorlBranches: 4,
+      foliageType: 'needles_rosette', barkType: 'fissured',
+      leafScale: 1.55, leafDensity: 4, needleLength: 0.75, needleDensity: 11, fascicleCount: 5, needleSpreadAngle: 52, pineConeDensity: 0.35,
+      colorTrunk: '#4a3728', colorLeafMain: '#1b4332', colorLeafTip: '#6b9080', colorFlower: '#92400e'
+    }
+  },
+  {
+    id: 'cypress_italian',
+    name: 'Ciprés Mediterráneo (Italian Cypress)',
+    scientificName: 'Cupressus sempervirens',
+    category: 'Coníferas & Aciculares',
+    description: 'Silueta columnar fastigiada muy estrecha con follaje escamiforme imbricado.',
+    params: {
+      engine: 'monopodial', crownShape: 'flame',
+      levels: 4, height: 8.2, trunkClearHeight: 0.12, crownWidthRatio: 0.16, radius: 0.26, taper: 0.66, flare: 0.3,
+      angle: 22, decay: 0.74, noise: 0.05, gravity: 0.38, gnarl: 0.05, whorlBranches: 6,
+      foliageType: 'needles_scale', barkType: 'fibrous_redwood',
+      leafScale: 1.05, leafDensity: 5, needleLength: 0.55, needleDensity: 12, fascicleCount: 3, needleSpreadAngle: 28, pineConeDensity: 0.25,
+      colorTrunk: '#4a3b32', colorLeafMain: '#1f3518', colorLeafTip: '#4d6b2c', colorFlower: '#78350f'
+    }
+  },
+  {
+    id: 'redwood_giant',
+    name: 'Secuoya Gigante (Giant Sequoia)',
+    scientificName: 'Sequoiadendron giganteum',
+    category: 'Coníferas & Aciculares',
+    description: 'Tronco colosal de corteza fibrosa rojiza con contrafuertes basales y follaje escamoso.',
+    params: {
+      engine: 'monopodial', crownShape: 'conical',
+      levels: 5, height: 9.0, trunkClearHeight: 0.28, crownWidthRatio: 0.34, radius: 0.82, taper: 0.68, flare: 0.75, rootCount: 8,
+      angle: 66, decay: 0.70, noise: 0.12, gravity: -0.06, gnarl: 0.18, whorlBranches: 5,
+      foliageType: 'needles_scale', barkType: 'fibrous_redwood',
+      leafScale: 1.65, leafDensity: 4, needleLength: 0.85, needleDensity: 10, fascicleCount: 3, needleSpreadAngle: 40, pineConeDensity: 0.3,
+      colorTrunk: '#7f2d18', colorLeafMain: '#1b4325', colorLeafTip: '#40916c', colorFlower: '#7c2d12'
+    }
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 3. ORNAMENTALES & EN FLORACIÓN (SAKURA, MAGNOLIA, JACARANDA, GLICINIA, ACEBO)
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    id: 'sakura_yoshino',
+    name: 'Cerezo en Flor (Yoshino Sakura)',
+    scientificName: 'Prunus × yedoensis',
+    category: 'Ornamentales & Floración',
+    description: 'Copa extendida cubierta de corimbos florales 3D de 5 pétalos rosados y brotes tiernos.',
+    params: {
+      engine: 'sympodial', crownShape: 'umbrella',
+      levels: 4, height: 4.2, trunkClearHeight: 0.28, crownWidthRatio: 0.56, radius: 0.38, taper: 0.70, flare: 0.42,
+      angle: 48, decay: 0.78, noise: 0.38, gravity: 0.06, gnarl: 0.35, branchCount: 3,
+      foliageType: 'blossom_clusters', barkType: 'smooth_ash',
+      leafScale: 1.4, leafDensity: 5,
+      colorTrunk: '#3b282a', colorLeafMain: '#f472b6', colorLeafTip: '#fce7f3', colorFlower: '#fbcfe8'
+    }
+  },
+  {
+    id: 'magnolia_soulangeana',
+    name: 'Magnolia Imperial (Saucer Magnolia)',
+    scientificName: 'Magnolia × soulangeana',
+    category: 'Ornamentales & Floración',
+    description: 'Ramas esculturales con grandes flores cáliz 3D de pétalos nacarados y hojas coriáceas.',
+    params: {
+      engine: 'sympodial', crownShape: 'hemispherical',
+      levels: 4, height: 4.4, trunkClearHeight: 0.22, crownWidthRatio: 0.52, radius: 0.36, taper: 0.70, flare: 0.38,
+      angle: 44, decay: 0.76, noise: 0.28, gravity: 0.12, gnarl: 0.25, branchCount: 3,
+      foliageType: 'blossom_clusters', barkType: 'smooth_ash',
+      leafScale: 1.5, leafDensity: 4,
+      colorTrunk: '#4e4237', colorLeafMain: '#166534', colorLeafTip: '#fdf2f8', colorFlower: '#f9a8d4'
+    }
+  },
+  {
+    id: 'jacaranda_mimosifolia',
+    name: 'Jacarandá Violeta (Blue Jacaranda)',
+    scientificName: 'Jacaranda mimosifolia',
+    category: 'Ornamentales & Floración',
+    description: 'Copa aparasolada cubierta de panículas florales azul-violeta y ramaje arqueado.',
+    params: {
+      engine: 'sympodial', crownShape: 'umbrella',
+      levels: 4, height: 5.2, trunkClearHeight: 0.32, crownWidthRatio: 0.58, radius: 0.40, taper: 0.72, flare: 0.42,
+      angle: 46, decay: 0.80, noise: 0.32, gravity: 0.10, gnarl: 0.3, branchCount: 3,
+      foliageType: 'blossom_clusters', barkType: 'fissured',
+      leafScale: 1.5, leafDensity: 5,
+      colorTrunk: '#6b5e52', colorLeafMain: '#6d28d9', colorLeafTip: '#c4b5fd', colorFlower: '#a78bfa'
+    }
+  },
+  {
+    id: 'wisteria_sinensis',
+    name: 'Glicinia en Cascada (Chinese Wisteria)',
+    scientificName: 'Wisteria sinensis',
+    category: 'Ornamentales & Floración',
+    description: 'Racimos péndulos perfumados en cascadas malva y lavanda sobre tronco trenzado.',
+    params: {
+      engine: 'weeping', crownShape: 'umbrella',
+      levels: 4, height: 4.0, trunkClearHeight: 0.34, crownWidthRatio: 0.56, radius: 0.34, taper: 0.70, flare: 0.45,
+      angle: 46, decay: 0.80, noise: 0.36, gravity: -0.45, gnarl: 0.45, branchCount: 3,
+      foliageType: 'weeping_strands', barkType: 'fissured',
+      leafScale: 1.35, leafDensity: 5,
+      colorTrunk: '#524135', colorLeafMain: '#7c3aed', colorLeafTip: '#ddd6fe', colorFlower: '#c084fc'
+    }
+  },
+  {
+    id: 'holly_european',
+    name: 'Acebo Real con Bayas (European Holly)',
+    scientificName: 'Ilex aquifolium',
+    category: 'Ornamentales & Floración',
+    description: 'Follaje verde oscuro lustroso acompañado de racimos densos de bayas rojas brillantes.',
+    params: {
+      engine: 'shrub', crownShape: 'conical',
+      levels: 4, height: 3.8, trunkClearHeight: 0.10, crownWidthRatio: 0.48, radius: 0.28, taper: 0.68, flare: 0.35,
+      angle: 38, decay: 0.74, noise: 0.22, gravity: 0.12, gnarl: 0.2, branchCount: 4,
+      foliageType: 'berry_clusters', barkType: 'smooth_ash',
+      leafScale: 1.25, leafDensity: 5,
+      colorTrunk: '#473c33', colorLeafMain: '#14532d', colorLeafTip: '#22c55e', colorFlower: '#dc2626'
+    }
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 4. PALMERAS, MUSÁCEAS, BAMBÚES & HELECHOS ARBÓREOS
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    id: 'palm_coconut',
+    name: 'Cocotero Tropical (Coconut Palm)',
+    scientificName: 'Cocos nucifera',
+    category: 'Palmeras & Tropicales',
+    description: 'Estípite anillado curvado por los vientos alisios con corona de frondas pinnadas arqueadas.',
+    params: {
+      engine: 'palm', crownShape: 'umbrella',
+      levels: 4, height: 6.4, radius: 0.26, taper: 0.82, flare: 0.45, showRoots: false,
+      angle: 50, decay: 0.86, noise: 0.38, gravity: -0.25, gnarl: 0.32,
+      foliageType: 'fronds_pinnate', barkType: 'palm_rings',
+      leafScale: 1.65, leafDensity: 4, leafBend: 0.55,
+      colorTrunk: '#785a46', colorLeafMain: '#2b9348', colorLeafTip: '#a3e635', colorFlower: '#713f12'
+    }
+  },
+  {
+    id: 'palm_date',
+    name: 'Palmera Datilera (Canary Date Palm)',
+    scientificName: 'Phoenix dactylifera',
+    category: 'Palmeras & Tropicales',
+    description: 'Estípite robusto con capitel de dátiles y gran corona esférica de más de 20 frondas pinnadas.',
+    params: {
+      engine: 'palm', crownShape: 'spherical',
+      levels: 4, height: 7.2, radius: 0.38, taper: 0.85, flare: 0.4, showRoots: false,
+      angle: 42, decay: 0.88, noise: 0.12, gravity: -0.15, gnarl: 0.1,
+      foliageType: 'fronds_pinnate', barkType: 'palm_rings',
+      leafScale: 1.75, leafDensity: 5, leafBend: 0.45,
+      colorTrunk: '#6b4e35', colorLeafMain: '#3f6212', colorLeafTip: '#84cc16', colorFlower: '#ea580c'
+    }
+  },
+  {
+    id: 'palm_washingtonia',
+    name: 'Palmera de Abanico (Mexican Fan Palm)',
+    scientificName: 'Washingtonia robusta',
+    category: 'Palmeras & Tropicales',
+    description: 'Palmera esbelta coronada por frondas costapalmadas circulares en forma de abanico estrellado.',
+    params: {
+      engine: 'palm', crownShape: 'spherical',
+      levels: 4, height: 7.6, radius: 0.28, taper: 0.84, flare: 0.42, showRoots: false,
+      angle: 45, decay: 0.88, noise: 0.16, gravity: -0.12, gnarl: 0.14,
+      foliageType: 'fronds_palmate', barkType: 'palm_rings',
+      leafScale: 1.55, leafDensity: 5, leafBend: 0.35,
+      colorTrunk: '#6e5544', colorLeafMain: '#15803d', colorLeafTip: '#86efac', colorFlower: '#ca8a04'
+    }
+  },
+  {
+    id: 'banana_musa',
+    name: 'Bananero Tropical (Cavendish Banana)',
+    scientificName: 'Musa acuminata',
+    category: 'Palmeras & Tropicales',
+    description: 'Pseudotallo herbáceo verde con corona radial de grandes hojas musáceas acanaladas y nervadas.',
+    params: {
+      engine: 'palm', crownShape: 'umbrella',
+      levels: 3, height: 3.4, radius: 0.24, taper: 0.86, flare: 0.3, showRoots: false,
+      angle: 42, decay: 0.86, noise: 0.08, gravity: -0.18, gnarl: 0.05,
+      foliageType: 'paddle_banana', barkType: 'bamboo_culm',
+      leafScale: 1.75, leafDensity: 4, leafBend: 0.48,
+      colorTrunk: '#3f6212', colorLeafMain: '#16a34a', colorLeafTip: '#86efac', colorFlower: '#9f1239'
+    }
+  },
+  {
+    id: 'bamboo_moso',
+    name: 'Bambú Gigante Moso (Moso Bamboo)',
+    scientificName: 'Phyllostachys edulis',
+    category: 'Palmeras & Tropicales',
+    description: 'Bosquete de cañas segmentadas con anillos nodales prominentes y penachos de hojas lanceoladas.',
+    params: {
+      engine: 'bamboo', crownShape: 'cylindrical',
+      levels: 4, height: 6.8, radius: 0.14, taper: 0.92, flare: 0.15, showRoots: false,
+      angle: 35, decay: 0.85, noise: 0.14, gravity: -0.1, gnarl: 0.1,
+      foliageType: 'bamboo_lance', barkType: 'bamboo_culm',
+      leafScale: 1.25, leafDensity: 4,
+      colorTrunk: '#65a30d', colorLeafMain: '#15803d', colorLeafTip: '#bef264', colorFlower: '#ecfccb'
+    }
+  },
+  {
+    id: 'fern_cyathea',
+    name: 'Helecho Arbóreo (Australian Tree Fern)',
+    scientificName: 'Cyathea cooperi',
+    category: 'Palmeras & Tropicales',
+    description: 'Roseta prehistórica de frondas bipinnadas finamente divididas emergiendo de un cáudice fibroso.',
+    params: {
+      engine: 'palm', crownShape: 'umbrella',
+      levels: 3, height: 2.8, radius: 0.22, taper: 0.88, flare: 0.35, showRoots: false,
+      angle: 52, decay: 0.85, noise: 0.08, gravity: -0.25, gnarl: 0.06,
+      foliageType: 'fronds_fern', barkType: 'fibrous_redwood',
+      leafScale: 1.65, leafDensity: 5, leafBend: 0.5,
+      colorTrunk: '#452719', colorLeafMain: '#15803d', colorLeafTip: '#a3e635', colorFlower: '#65a30d'
+    }
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 5. CACTÁCEAS & SUCULENTAS (SAGUARO, PITAYO, NOPAL, BIZNAGA, AGAVE)
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    id: 'cactus_saguaro',
+    name: 'Saguaro Imperial (Giant Saguaro)',
+    scientificName: 'Carnegiea gigantea',
+    category: 'Cactáceas & Suculentas',
+    description: 'Columna acanalada con múltiples brazos articulados en codo curvo, areolas espinosas y flores apicales.',
+    params: {
+      engine: 'cactus', cactusSubType: 'saguaro',
+      levels: 3, height: 5.4, radius: 0.38, taper: 0.90, showRoots: false,
+      angle: 68, decay: 0.72, noise: 0.06, gravity: 0.45,
+      foliageType: 'none', barkType: 'cactus_ribs',
+      cactusRibs: 14, ribDepth: 0.14, armCount: 5, armSpread: 0.85, armHeightMin: 0.30, armElbowCurve: 0.7, subArmProb: 0.4,
+      spineDensity: 1.4, spineLength: 1.1, spinesPerAreole: 7, cactusFlowerCount: 5,
+      colorTrunk: '#3f6212', colorLeafMain: '#65a30d', colorLeafTip: '#a3e635', colorSpine: '#fef08a', colorFlower: '#fda4af'
+    }
+  },
+  {
+    id: 'cactus_organ_pipe',
+    name: 'Pitayo / Órgano (Organ Pipe Cactus)',
+    scientificName: 'Stenocereus thurberi',
+    category: 'Cactáceas & Suculentas',
+    description: 'Cactus multicaule cuyos numerosos brazos columnares nacen curvados desde el cuello basal.',
+    params: {
+      engine: 'cactus', cactusSubType: 'organ_pipe',
+      levels: 3, height: 4.8, radius: 0.24, taper: 0.92, showRoots: false,
+      angle: 58, decay: 0.85, noise: 0.08, gravity: 0.5,
+      foliageType: 'none', barkType: 'cactus_ribs',
+      cactusRibs: 12, ribDepth: 0.13, armCount: 7, armSpread: 1.0, armHeightMin: 0.08, armElbowCurve: 0.8, subArmProb: 0.2,
+      spineDensity: 1.5, spineLength: 1.0, spinesPerAreole: 8, cactusFlowerCount: 6,
+      colorTrunk: '#365314', colorLeafMain: '#4d7c0f', colorLeafTip: '#84cc16', colorSpine: '#fde047', colorFlower: '#f43f5e'
+    }
+  },
+  {
+    id: 'cactus_candelabra',
+    name: 'Cardón Candelabro (Candelabra Cactus)',
+    scientificName: 'Pachycereus weberi',
+    category: 'Cactáceas & Suculentas',
+    description: 'Gigante ramificado en múltiples órdenes con brazos principales y secundarios como un candelabro.',
+    params: {
+      engine: 'cactus', cactusSubType: 'candelabra',
+      levels: 4, height: 6.2, radius: 0.42, taper: 0.88, showRoots: false,
+      angle: 62, decay: 0.75, noise: 0.08, gravity: 0.45,
+      foliageType: 'none', barkType: 'cactus_ribs',
+      cactusRibs: 11, ribDepth: 0.16, armCount: 6, armSpread: 1.1, armHeightMin: 0.25, armElbowCurve: 0.65, subArmProb: 0.75,
+      spineDensity: 1.6, spineLength: 1.35, spinesPerAreole: 8, cactusFlowerCount: 6,
+      colorTrunk: '#2e4c1e', colorLeafMain: '#4d7c0f', colorLeafTip: '#84cc16', colorSpine: '#fed7aa', colorFlower: '#fbbf24'
+    }
+  },
+  {
+    id: 'cactus_opuntia',
+    name: 'Nopal / Chumbera (Prickly Pear Opuntia)',
+    scientificName: 'Opuntia ficus-indica',
+    category: 'Cactáceas & Suculentas',
+    description: 'Cladodios ovalados aplanados (pencas) articulados en cadena con espinas blancas y tunas en flor.',
+    params: {
+      engine: 'cactus', cactusSubType: 'opuntia',
+      levels: 4, height: 3.4, radius: 0.36, taper: 0.85, showRoots: false,
+      angle: 48, decay: 0.82, noise: 0.15, gravity: 0.1,
+      foliageType: 'none', barkType: 'cactus_ribs',
+      cactusRibs: 8, ribDepth: 0.08, armCount: 6, armSpread: 0.9, armHeightMin: 0.2, armElbowCurve: 0.4, subArmProb: 0.65,
+      spineDensity: 1.4, spineLength: 1.15, spinesPerAreole: 5, cactusFlowerCount: 7,
+      colorTrunk: '#3f6212', colorLeafMain: '#65a30d', colorLeafTip: '#a3e635', colorSpine: '#fef9c3', colorFlower: '#f97316'
+    }
+  },
+  {
+    id: 'cactus_barrel',
+    name: 'Biznaga Dorada (Golden Barrel Cactus)',
+    scientificName: 'Kroenleinia grusonii',
+    category: 'Cactáceas & Suculentas',
+    description: 'Esfera globosa profundamente acostillada con corona densa de espinas áureas entrecruzadas.',
+    params: {
+      engine: 'cactus', cactusSubType: 'barrel',
+      levels: 2, height: 2.2, radius: 0.68, taper: 0.95, showRoots: false,
+      angle: 45, decay: 0.75, noise: 0.04, gravity: 0.2,
+      foliageType: 'none', barkType: 'cactus_ribs',
+      cactusRibs: 18, ribDepth: 0.16, armCount: 3, armSpread: 0.65, armHeightMin: 0.1, armElbowCurve: 0.5, subArmProb: 0,
+      spineDensity: 1.8, spineLength: 1.4, spinesPerAreole: 9, cactusFlowerCount: 6,
+      colorTrunk: '#365314', colorLeafMain: '#4d7c0f', colorLeafTip: '#84cc16', colorSpine: '#facc15', colorFlower: '#fde047'
+    }
+  },
+  {
+    id: 'agave_tequilana',
+    name: 'Agave Azul (Blue Weber Agave)',
+    scientificName: 'Agave tequilana',
+    category: 'Cactáceas & Suculentas',
+    description: 'Roseta geométrica de pencas lanceoladas carnosas verde-azuladas con espina terminal.',
+    params: {
+      engine: 'rosette',
+      levels: 3, height: 2.2, radius: 0.42, taper: 0.80, showRoots: false,
+      angle: 52, decay: 0.80, noise: 0.08, gravity: 0.05,
+      foliageType: 'succulent_rosette', barkType: 'cactus_ribs',
+      leafScale: 1.4, leafDensity: 5,
+      colorTrunk: '#1e3a3a', colorLeafMain: '#0f766e', colorLeafTip: '#5eead4', colorFlower: '#fde047'
+    }
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 6. XENOBOTÁNICA & FLORA EXTRATERRESTRE (FOLIOS 1, 2 & 3)
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    id: 'alien_mega_mushroom',
+    name: 'Mega-Seta Marciana en Terrazas (Martian Canopy Fungus)',
+    scientificName: 'Xenomyces altissimus',
+    category: 'Xenobotánica & Extraterrestres',
+    description: 'Folio 1 & 3: Estípites fúngicos gigantes con sombreros en terrazas, laminillas radiales luminiscentes, filamentos colgantes y raíces zanco.',
+    params: {
+      engine: 'alien_xenobotany', alienArchetype: 'mega_mushroom_terraced',
+      levels: 4, height: 7.4, crownWidthRatio: 0.48, radius: 0.42, taper: 0.68, flare: 0.55,
+      showRoots: true, rootCount: 7, rootLength: 1.5, rootThickness: 1.15, rootArch: 0.85,
+      branchCount: 3, gnarl: 0.25, leafScale: 1.15, leafDensity: 4,
+      foliageType: 'alien_umbrella_caps', barkType: 'fibrous_redwood',
+      tonalMode: 'striated_banded',
+      colorTrunk: '#27272a', colorLeafMain: '#9a3412', colorLeafTip: '#fb923c', colorFlower: '#fde047', colorAccent: '#f97316',
+      emissiveIntensity: 0.55, iridescenceAmount: 0.2, patternScale: 1.2, patternContrast: 0.68, wetnessGloss: 0.35
+    }
+  },
+  {
+    id: 'alien_spiral_tentacle',
+    name: 'Espiral Tentacular de Ventosas Doradas (Fiddlehead Coil)',
+    scientificName: 'Helixophyta aurea',
+    category: 'Xenobotánica & Extraterrestres',
+    description: 'Folio 1: Colonia de tentáculos de obsidiana enrollados en espiral de Fibonacci con ventosas anulares doradas y alfombra de micro-setas.',
+    params: {
+      engine: 'alien_xenobotany', alienArchetype: 'spiral_fiddlehead_tentacle',
+      levels: 4, height: 5.8, crownWidthRatio: 0.42, radius: 0.36, taper: 0.55, flare: 0.4,
+      showRoots: true, rootCount: 6, rootLength: 1.3, rootThickness: 1.0, rootArch: 0.4,
+      branchCount: 5, gnarl: 0.45, leafScale: 1.1, leafDensity: 4,
+      foliageType: 'alien_tentacle_coils', barkType: 'cactus_ribs',
+      tonalMode: 'iridescent_chitin',
+      colorTrunk: '#18181b', colorLeafMain: '#3f3f46', colorLeafTip: '#eab308', colorFlower: '#facc15', colorAccent: '#fde047',
+      emissiveIntensity: 0.5, iridescenceAmount: 0.72, patternScale: 1.0, patternContrast: 0.6, wetnessGloss: 0.65
+    }
+  },
+  {
+    id: 'alien_carnivorous_pitcher',
+    name: 'Colonia de Cáliz Carnívoro Ácido (Xeno-Ascidium)',
+    scientificName: 'Nepenthes xenomorpha',
+    category: 'Xenobotánica & Extraterrestres',
+    description: 'Folio 1 & 2: Trompetas tubulares translúcidas verde-lima con labio peristoma escarlata emergiendo de un charco mucilaginoso.',
+    params: {
+      engine: 'alien_xenobotany', alienArchetype: 'carnivorous_pitcher_colony',
+      levels: 3, height: 4.8, crownWidthRatio: 0.45, radius: 0.42, taper: 0.8, flare: 0.35,
+      showRoots: false, rootCount: 4, rootLength: 1.0, rootThickness: 0.9, rootArch: 0.3,
+      branchCount: 6, gnarl: 0.2, leafScale: 1.15, leafDensity: 4,
+      foliageType: 'alien_pitcher_traps', barkType: 'smooth_ash',
+      tonalMode: 'translucent_jelly',
+      colorTrunk: '#3f6212', colorLeafMain: '#65a30d', colorLeafTip: '#bef264', colorFlower: '#ef4444', colorAccent: '#dc2626',
+      emissiveIntensity: 0.6, iridescenceAmount: 0.25, patternScale: 1.0, patternContrast: 0.55, wetnessGloss: 0.95
+    }
+  },
+  {
+    id: 'alien_fenestrated_coral',
+    name: 'Torre Calcárea Perforada / Árbol Esponja (Spongia Spire)',
+    scientificName: 'Calcispongia arborescens',
+    category: 'Xenobotánica & Extraterrestres',
+    description: 'Folio 1, 2 & 3: Pilares óseos calcificados fusionados formando arcos huecos trabeculares y plataformas de coral en voladizo.',
+    params: {
+      engine: 'alien_xenobotany', alienArchetype: 'fenestrated_coral_spire',
+      levels: 4, height: 7.2, crownWidthRatio: 0.46, radius: 0.44, taper: 0.78, flare: 0.6,
+      showRoots: true, rootCount: 8, rootLength: 1.65, rootThickness: 1.3, rootArch: 1.15,
+      branchCount: 6, gnarl: 0.35, leafScale: 1.15, leafDensity: 4,
+      foliageType: 'alien_umbrella_caps', barkType: 'fissured',
+      tonalMode: 'striated_banded',
+      colorTrunk: '#d6d3d1', colorLeafMain: '#d97706', colorLeafTip: '#fde68a', colorFlower: '#f59e0b', colorAccent: '#78350f',
+      emissiveIntensity: 0.18, iridescenceAmount: 0.15, patternScale: 1.1, patternContrast: 0.65, wetnessGloss: 0.2
+    }
+  },
+  {
+    id: 'alien_cracked_ova_ivory',
+    name: 'Esferas Craqueladas Marfil (Voronoi Spore Ova)',
+    scientificName: 'Ovosphaera reticulata',
+    category: 'Xenobotánica & Extraterrestres',
+    description: 'Folio 1: Racimo de esferas bulbosas color marfil con red celular Voronoi craquelada sostenidas por pedúnculos oscuros.',
+    params: {
+      engine: 'alien_xenobotany', alienArchetype: 'cracked_ova_cluster',
+      levels: 3, height: 4.2, crownWidthRatio: 0.45, radius: 0.38, taper: 0.72, flare: 0.45,
+      showRoots: true, rootCount: 7, rootLength: 1.35, rootThickness: 1.1, rootArch: 0.6,
+      branchCount: 5, gnarl: 0.3, leafScale: 1.15, leafDensity: 4,
+      foliageType: 'alien_spore_bulbs', barkType: 'fibrous_redwood',
+      tonalMode: 'voronoi_cracked',
+      colorTrunk: '#291d18', colorLeafMain: '#f5f5f4', colorLeafTip: '#fef3c7', colorFlower: '#78350f', colorAccent: '#451a03',
+      emissiveIntensity: 0.1, iridescenceAmount: 0.15, patternScale: 1.45, patternContrast: 0.9, wetnessGloss: 0.6
+    }
+  },
+  {
+    id: 'alien_cracked_ova_cobalt',
+    name: 'Racimo Ova Cobalto Bioluminiscente (Cobalt Ova)',
+    scientificName: 'Ovosphaera coerulea',
+    category: 'Xenobotánica & Extraterrestres',
+    description: 'Folio 2: Esferas bulbosas azul cobalto y violeta con fisuras celulares profundas sobre tallos negros brillantes.',
+    params: {
+      engine: 'alien_xenobotany', alienArchetype: 'cracked_ova_cluster',
+      levels: 4, height: 4.5, crownWidthRatio: 0.48, radius: 0.36, taper: 0.7, flare: 0.4,
+      showRoots: true, rootCount: 6, rootLength: 1.25, rootThickness: 1.0, rootArch: 0.55,
+      branchCount: 7, gnarl: 0.35, leafScale: 1.05, leafDensity: 5,
+      foliageType: 'alien_spore_bulbs', barkType: 'smooth_ash',
+      tonalMode: 'voronoi_cracked',
+      colorTrunk: '#090d16', colorLeafMain: '#6366f1', colorLeafTip: '#93c5fd', colorFlower: '#38bdf8', colorAccent: '#020617',
+      emissiveIntensity: 0.38, iridescenceAmount: 0.4, patternScale: 1.55, patternContrast: 0.92, wetnessGloss: 0.65
+    }
+  },
+  {
+    id: 'alien_star_caudex',
+    name: 'Bulbo Tentacular con Flor Estrella (Star-Caudex)',
+    scientificName: 'Astrophytum tentaculatum',
+    category: 'Xenobotánica & Extraterrestres',
+    description: 'Folio 2: Caudex basal abombado con látigos rastreros y tallo espinoso sinuoso rematado por una flor estrella carnosa de 4 puntas.',
+    params: {
+      engine: 'alien_xenobotany', alienArchetype: 'star_flower_caudex',
+      levels: 3, height: 5.2, crownWidthRatio: 0.42, radius: 0.42, taper: 0.65, flare: 0.55,
+      showRoots: true, rootCount: 8, rootLength: 1.6, rootThickness: 1.15, rootArch: 0.5,
+      branchCount: 5, gnarl: 0.35, leafScale: 1.2, leafDensity: 4,
+      foliageType: 'succulent_rosette', barkType: 'cactus_ribs',
+      tonalMode: 'natural_botanical',
+      colorTrunk: '#334155', colorLeafMain: '#475569', colorLeafTip: '#eab308', colorFlower: '#facc15', colorAccent: '#991b1b',
+      emissiveIntensity: 0.25, iridescenceAmount: 0.2, patternScale: 1.1, patternContrast: 0.6, wetnessGloss: 0.45
+    }
+  },
+  {
+    id: 'alien_azure_chimneys',
+    name: 'Chimeneas Tubulares de Esporas Azules (Azure Spore Tubes)',
+    scientificName: 'Siphonocladus cyanus',
+    category: 'Xenobotánica & Extraterrestres',
+    description: 'Folio 2 & 3: Colonia de tubos verticales acanalados azul eléctrico y turquesa coronados por anillos musgosos verde-lima.',
+    params: {
+      engine: 'alien_xenobotany', alienArchetype: 'azure_spore_chimneys',
+      levels: 3, height: 4.8, crownWidthRatio: 0.38, radius: 0.34, taper: 0.85, flare: 0.3,
+      showRoots: false, rootCount: 5, rootLength: 1.0, rootThickness: 0.8, rootArch: 0.3,
+      branchCount: 6, gnarl: 0.15, leafScale: 1.1, leafDensity: 5,
+      foliageType: 'alien_pitcher_traps', barkType: 'cactus_ribs',
+      tonalMode: 'bioluminescent_abyss',
+      colorTrunk: '#0369a1', colorLeafMain: '#0284c7', colorLeafTip: '#38bdf8', colorFlower: '#a3e635', colorAccent: '#bef264',
+      emissiveIntensity: 0.65, iridescenceAmount: 0.25, patternScale: 1.3, patternContrast: 0.65, wetnessGloss: 0.4
+    }
+  },
+  {
+    id: 'alien_sap_baobab',
+    name: 'Baobab Xenomórfico de Savia Magmática (Blood-Sap Baobab)',
+    scientificName: 'Adansonia pyrosap',
+    category: 'Xenobotánica & Extraterrestres',
+    description: 'Folio 1 & 3: Tronco paquicaule abombado con fisuras verticales de savia incandescente naranja y corona de rosetas suculentas.',
+    params: {
+      engine: 'alien_xenobotany', alienArchetype: 'sap_fissure_baobab',
+      levels: 3, height: 5.8, crownWidthRatio: 0.45, radius: 0.58, taper: 0.78, flare: 0.5,
+      showRoots: true, rootCount: 7, rootLength: 1.4, rootThickness: 1.25, rootArch: 0.45,
+      branchCount: 4, gnarl: 0.2, leafScale: 1.15, leafDensity: 4,
+      foliageType: 'succulent_rosette', barkType: 'fissured',
+      tonalMode: 'voronoi_cracked',
+      colorTrunk: '#78716c', colorLeafMain: '#84cc16', colorLeafTip: '#d9f99d', colorFlower: '#f97316', colorAccent: '#ea580c',
+      emissiveIntensity: 0.75, iridescenceAmount: 0.15, patternScale: 0.95, patternContrast: 0.78, wetnessGloss: 0.35
+    }
+  },
+  {
+    id: 'alien_spiky_sentinel',
+    name: 'Centinela Maza Espinosa & Estrellas Aéreas (Spiky Mace Tree)',
+    scientificName: 'Echinodendron stellaris',
+    category: 'Xenobotánica & Extraterrestres',
+    description: 'Folio 3: Tronco estriado curvo rematado por una maza esférica erizada de largas púas de obsidiana y esporas estelares flotantes.',
+    params: {
+      engine: 'alien_xenobotany', alienArchetype: 'spiky_mace_sentinel',
+      levels: 3, height: 6.4, crownWidthRatio: 0.4, radius: 0.44, taper: 0.6, flare: 0.65,
+      showRoots: true, rootCount: 6, rootLength: 1.4, rootThickness: 1.1, rootArch: 0.5,
+      branchCount: 3, gnarl: 0.3, leafScale: 1.15, leafDensity: 4,
+      foliageType: 'alien_spore_bulbs', barkType: 'fibrous_redwood',
+      tonalMode: 'iridescent_chitin',
+      colorTrunk: '#312e81', colorLeafMain: '#1e1b4b', colorLeafTip: '#fef08a', colorFlower: '#f43f5e', colorAccent: '#a855f7',
+      emissiveIntensity: 0.45, iridescenceAmount: 0.75, patternScale: 1.1, patternContrast: 0.65, wetnessGloss: 0.5
+    }
+  },
+  {
+    id: 'alien_crimson_gorgonian',
+    name: 'Pilar de Coral Abisal Escarlata (Crimson Gorgonian)',
+    scientificName: 'Corallium abyssalis',
+    category: 'Xenobotánica & Extraterrestres',
+    description: 'Folio 3: Columnas arrecifales tapizadas de cientos de pólipos tubulares carmesí, magenta y coral luminiscente.',
+    params: {
+      engine: 'alien_xenobotany', alienArchetype: 'crimson_coral_plume',
+      levels: 4, height: 6.0, crownWidthRatio: 0.38, radius: 0.38, taper: 0.75, flare: 0.4,
+      showRoots: true, rootCount: 5, rootLength: 1.2, rootThickness: 1.0, rootArch: 0.35,
+      branchCount: 4, gnarl: 0.25, leafScale: 1.1, leafDensity: 5,
+      foliageType: 'alien_tentacle_coils', barkType: 'cactus_ribs',
+      tonalMode: 'tri_tone_xenogradient',
+      colorTrunk: '#4c0519', colorLeafMain: '#be123c', colorLeafTip: '#fb7185', colorFlower: '#fda4af', colorAccent: '#f43f5e',
+      emissiveIntensity: 0.5, iridescenceAmount: 0.3, patternScale: 1.0, patternContrast: 0.6, wetnessGloss: 0.55
+    }
+  },
+  {
+    id: 'alien_biolum_crater',
+    name: 'Domos Poro de Cráter Bioluminiscente (Bio-Crater Mounds)',
+    scientificName: 'Crateropora viridis',
+    category: 'Xenobotánica & Extraterrestres',
+    description: 'Folio 3: Montículos celulares reticulados con venas carmesí y bocas de cráter que irradian bioluminiscencia verde neón.',
+    params: {
+      engine: 'alien_xenobotany', alienArchetype: 'biolum_crater_mounds',
+      levels: 3, height: 3.4, crownWidthRatio: 0.65, radius: 0.55, taper: 0.85, flare: 0.5,
+      showRoots: false, rootCount: 4, rootLength: 1.0, rootThickness: 1.0, rootArch: 0.25,
+      branchCount: 5, gnarl: 0.2, leafScale: 1.15, leafDensity: 4,
+      foliageType: 'alien_spore_bulbs', barkType: 'pine_plates',
+      tonalMode: 'voronoi_cracked',
+      colorTrunk: '#0f172a', colorLeafMain: '#115e59', colorLeafTip: '#4ade80', colorFlower: '#22c55e', colorAccent: '#e11d48',
+      emissiveIntensity: 0.95, iridescenceAmount: 0.25, patternScale: 1.3, patternContrast: 0.92, wetnessGloss: 0.5
+    }
+  },
+  {
+    id: 'alien_albino_palm',
+    name: 'Palmera Albina de Cristal & Coral Púrpura (Xeno-Palm)',
+    scientificName: 'Crystallopalma purpurea',
+    category: 'Xenobotánica & Extraterrestres',
+    description: 'Folio 2: Estípites marfil curvados desde un nudo radicular con frondas dorado-melocotón y cojines de coral violeta.',
+    params: {
+      engine: 'alien_xenobotany', alienArchetype: 'albino_crystal_palm',
+      levels: 4, height: 6.2, crownWidthRatio: 0.48, radius: 0.3, taper: 0.72, flare: 0.45,
+      showRoots: true, rootCount: 8, rootLength: 1.45, rootThickness: 0.95, rootArch: 0.65,
+      branchCount: 4, gnarl: 0.3, leafScale: 1.25, leafDensity: 4,
+      foliageType: 'fronds_pinnate', barkType: 'palm_rings',
+      tonalMode: 'tri_tone_xenogradient',
+      colorTrunk: '#f1f5f9', colorLeafMain: '#fcd34d', colorLeafTip: '#fef08a', colorFlower: '#a855f7', colorAccent: '#9333ea',
+      emissiveIntensity: 0.3, iridescenceAmount: 0.35, patternScale: 1.0, patternContrast: 0.5, wetnessGloss: 0.35
+    }
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 7. MUSGOS, LÍQUENES & HONGOS SOBRE ROCA 3D (MICRO-NATURALEZA DEL BOSQUE)
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    id: 'moss_amanita_boulder',
+    name: 'Colonia Amanita muscaria sobre Roca Musgosa',
+    scientificName: 'Amanita muscaria & Bryophyta',
+    category: 'Musgos, Líquenes & Hongos (Roca 3D)',
+    description: 'Roca natural del bosque tapizada de cojines de musgo esmeralda con una colonia de setas rojas con motas blancas 3D, anillo y laminillas.',
+    params: {
+      engine: 'moss_fungi_rock', mossFungiArchetype: 'amanita_muscaria_moss',
+      rockScale: 1.05, rockRoughness: 0.68, mossCoverage: 0.85,
+      height: 2.2, radius: 0.45, showRoots: false,
+      branchCount: 6, leafScale: 1.15, leafDensity: 5,
+      barkType: 'fissured', tonalMode: 'natural_botanical',
+      colorTrunk: '#57534e', colorLeafMain: '#2d6a4f', colorLeafTip: '#dc2626', colorFlower: '#fef3c7', colorAccent: '#ef4444',
+      emissiveIntensity: 0.12, wetnessGloss: 0.45
+    }
+  },
+  {
+    id: 'moss_velvet_sporophytes',
+    name: 'Musgo Terciopelo & Cápsulas de Esporofitos sobre Roca',
+    scientificName: 'Bryum capillare',
+    category: 'Musgos, Líquenes & Hongos (Roca 3D)',
+    description: 'Porción de roca granítica cubierta de almohadillas botroidales de musgo terciopelo y decenas de tallos esporofitos con cápsulas de esporas.',
+    params: {
+      engine: 'moss_fungi_rock', mossFungiArchetype: 'velvet_moss_sporophytes',
+      rockScale: 1.0, rockRoughness: 0.62, mossCoverage: 0.92,
+      height: 1.8, radius: 0.42, showRoots: false,
+      branchCount: 7, leafScale: 1.1, leafDensity: 5,
+      barkType: 'fissured', tonalMode: 'natural_botanical',
+      colorTrunk: '#64748b', colorLeafMain: '#15803d', colorLeafTip: '#84cc16', colorFlower: '#d97706', colorAccent: '#bef264',
+      emissiveIntensity: 0.15, wetnessGloss: 0.35
+    }
+  },
+  {
+    id: 'moss_biolum_mycena',
+    name: 'Colonia Bioluminiscente Mycena sobre Roca Húmeda',
+    scientificName: 'Mycena chlorophos',
+    category: 'Musgos, Líquenes & Hongos (Roca 3D)',
+    description: 'Pequeñas setas translúcidas de bosque subtropical que brillan en verde-cian neón sobre una roca basáltica cubierta de musgo.',
+    params: {
+      engine: 'moss_fungi_rock', mossFungiArchetype: 'biolum_mycena_colony',
+      rockScale: 1.05, rockRoughness: 0.72, mossCoverage: 0.80,
+      height: 2.1, radius: 0.45, showRoots: false,
+      branchCount: 8, leafScale: 1.15, leafDensity: 5,
+      barkType: 'fissured', tonalMode: 'bioluminescent_abyss',
+      colorTrunk: '#334155', colorLeafMain: '#115e59', colorLeafTip: '#2dd4bf', colorFlower: '#4ade80', colorAccent: '#00f5d4',
+      emissiveIntensity: 0.92, wetnessGloss: 0.75
+    }
+  },
+  {
+    id: 'moss_turkey_tail_rock',
+    name: 'Hongos Cola de Pavo en Repisa & Musgo (Trametes)',
+    scientificName: 'Trametes versicolor',
+    category: 'Musgos, Líquenes & Hongos (Roca 3D)',
+    description: 'Abanicos concéntricos escalonados en bandas caoba, ocre y marfil brotando en terrazas sobre una roca musgosa.',
+    params: {
+      engine: 'moss_fungi_rock', mossFungiArchetype: 'turkey_tail_bracket',
+      rockScale: 1.1, rockRoughness: 0.75, mossCoverage: 0.76,
+      height: 2.0, radius: 0.48, showRoots: false,
+      branchCount: 6, leafScale: 1.2, leafDensity: 4,
+      barkType: 'pine_plates', tonalMode: 'striated_banded',
+      colorTrunk: '#52525b', colorLeafMain: '#3f6212', colorLeafTip: '#b45309', colorFlower: '#fef3c7', colorAccent: '#f59e0b',
+      emissiveIntensity: 0.1, patternScale: 1.35, patternContrast: 0.75, wetnessGloss: 0.3
+    }
+  },
+  {
+    id: 'moss_golden_enoki',
+    name: 'Ramillete Enoki Dorado Silvestre sobre Roca',
+    scientificName: 'Flammulina velutipes',
+    category: 'Musgos, Líquenes & Hongos (Roca 3D)',
+    description: 'Denso ramillete de setas de aguja de invierno con tallos largos curvados y sombreros acaramelados húmedos.',
+    params: {
+      engine: 'moss_fungi_rock', mossFungiArchetype: 'golden_enoki_cluster',
+      rockScale: 1.0, rockRoughness: 0.60, mossCoverage: 0.82,
+      height: 2.2, radius: 0.42, showRoots: false,
+      branchCount: 7, leafScale: 1.15, leafDensity: 5,
+      barkType: 'fissured', tonalMode: 'translucent_jelly',
+      colorTrunk: '#57534e', colorLeafMain: '#365314', colorLeafTip: '#f59e0b', colorFlower: '#fef08a', colorAccent: '#fbbf24',
+      emissiveIntensity: 0.28, wetnessGloss: 0.82
+    }
+  },
+  {
+    id: 'moss_pixie_cup_lichen',
+    name: 'Liquen Trompeta de Hadas & Briófitos (Cladonia)',
+    scientificName: 'Cladonia pyxidata & C. cristatella',
+    category: 'Musgos, Líquenes & Hongos (Roca 3D)',
+    description: 'Cálices liquénicos verde-menta con coronas escarlata («Soldados Británicos») creciendo junto al musgo sobre roca.',
+    params: {
+      engine: 'moss_fungi_rock', mossFungiArchetype: 'pixie_cup_lichen',
+      rockScale: 1.0, rockRoughness: 0.68, mossCoverage: 0.88,
+      height: 1.9, radius: 0.44, showRoots: false,
+      branchCount: 7, leafScale: 1.2, leafDensity: 5,
+      barkType: 'fissured', tonalMode: 'natural_botanical',
+      colorTrunk: '#64748b', colorLeafMain: '#4d7c0f', colorLeafTip: '#a7f3d0', colorFlower: '#ef4444', colorAccent: '#f43f5e',
+      emissiveIntensity: 0.18, wetnessGloss: 0.25
+    }
+  },
+  {
+    id: 'moss_morel_sponge',
+    name: 'Colmenillas del Bosque sobre Roca Musgosa (Morchella)',
+    scientificName: 'Morchella esculenta',
+    category: 'Musgos, Líquenes & Hongos (Roca 3D)',
+    description: 'Hongos colmenilla con sombreros cónicos alveolados en panal y pies huecos color crema emergiendo del musgo.',
+    params: {
+      engine: 'moss_fungi_rock', mossFungiArchetype: 'morel_sponge_moss',
+      rockScale: 1.05, rockRoughness: 0.65, mossCoverage: 0.80,
+      height: 2.1, radius: 0.44, showRoots: false,
+      branchCount: 5, leafScale: 1.2, leafDensity: 4,
+      barkType: 'fissured', tonalMode: 'natural_botanical',
+      colorTrunk: '#57534e', colorLeafMain: '#2d6a4f', colorLeafTip: '#92400e', colorFlower: '#fef3c7', colorAccent: '#b45309',
+      emissiveIntensity: 0.1, wetnessGloss: 0.35
+    }
+  },
+  {
+    id: 'moss_coral_ramaria',
+    name: 'Hongo Coral Dorado & Musgo (Ramaria aurea)',
+    scientificName: 'Ramaria aurea',
+    category: 'Musgos, Líquenes & Hongos (Roca 3D)',
+    description: 'Colonias ramificadas de hongos coralinos en tonos azafrán, salmón y oro sobre un bloque de roca tapizado de musgo.',
+    params: {
+      engine: 'moss_fungi_rock', mossFungiArchetype: 'coral_fungus_ramaria',
+      rockScale: 1.05, rockRoughness: 0.64, mossCoverage: 0.84,
+      height: 2.0, radius: 0.44, showRoots: false,
+      branchCount: 6, leafScale: 1.15, leafDensity: 5,
+      barkType: 'fissured', tonalMode: 'natural_botanical',
+      colorTrunk: '#52525b', colorLeafMain: '#166534', colorLeafTip: '#fb923c', colorFlower: '#fde047', colorAccent: '#f97316',
+      emissiveIntensity: 0.22, wetnessGloss: 0.45
+    }
+  },
+  {
+    id: 'moss_chanterelle_golden',
+    name: 'Rebozuelos Dorados / Cantarelas sobre Roca (Cantharellus)',
+    scientificName: 'Cantharellus cibarius',
+    category: 'Musgos, Líquenes & Hongos (Roca 3D)',
+    description: 'Setas infundibuliformes en forma de trompeta ondulada color oro intenso con pliegues laminares decurrentes.',
+    params: {
+      engine: 'moss_fungi_rock', mossFungiArchetype: 'chanterelle_golden_moss',
+      rockScale: 1.05, rockRoughness: 0.66, mossCoverage: 0.85,
+      height: 2.0, radius: 0.45, showRoots: false,
+      branchCount: 6, leafScale: 1.2, leafDensity: 5,
+      barkType: 'fissured', tonalMode: 'natural_botanical',
+      colorTrunk: '#57534e', colorLeafMain: '#15803d', colorLeafTip: '#f59e0b', colorFlower: '#fde047', colorAccent: '#fbbf24',
+      emissiveIntensity: 0.16, wetnessGloss: 0.4
+    }
+  },
+  {
+    id: 'moss_star_polytrichum',
+    name: 'Musgo Estrellado Gigante (Polytrichum commune)',
+    scientificName: 'Polytrichum commune',
+    category: 'Musgos, Líquenes & Hongos (Roca 3D)',
+    description: 'Densa colonia de gametofitos estrellados en rosetas de agujas verdes con cápsulas esporofíticas doradas.',
+    params: {
+      engine: 'moss_fungi_rock', mossFungiArchetype: 'star_moss_polytrichum',
+      rockScale: 1.0, rockRoughness: 0.60, mossCoverage: 0.94,
+      height: 1.8, radius: 0.42, showRoots: false,
+      branchCount: 8, leafScale: 1.15, leafDensity: 5,
+      barkType: 'fissured', tonalMode: 'natural_botanical',
+      colorTrunk: '#475569', colorLeafMain: '#14532d', colorLeafTip: '#4ade80', colorFlower: '#facc15', colorAccent: '#84cc16',
+      emissiveIntensity: 0.14, wetnessGloss: 0.35
+    }
+  },
+  {
+    id: 'moss_sphagnum_pillow',
+    name: 'Cojín de Musgo Sphagnum Esmeralda & Rubí',
+    scientificName: 'Sphagnum magellanicum',
+    category: 'Musgos, Líquenes & Hongos (Roca 3D)',
+    description: 'Almohadilla botroidal húmeda de musgo de turbera con transición cromática entre verde lima, ámbar y carmesí.',
+    params: {
+      engine: 'moss_fungi_rock', mossFungiArchetype: 'sphagnum_bog_pillow',
+      rockScale: 1.05, rockRoughness: 0.58, mossCoverage: 0.96,
+      height: 1.8, radius: 0.44, showRoots: false,
+      branchCount: 7, leafScale: 1.2, leafDensity: 5,
+      barkType: 'fissured', tonalMode: 'natural_botanical',
+      colorTrunk: '#44403c', colorLeafMain: '#65a30d', colorLeafTip: '#e11d48', colorFlower: '#fde047', colorAccent: '#fb7185',
+      emissiveIntensity: 0.18, wetnessGloss: 0.65
+    }
+  },
+  {
+    id: 'moss_puffball_birdsnest',
+    name: 'Bejines Perlados & Hongos Nido de Pájaro sobre Roca',
+    scientificName: 'Lycoperdon perlatum & Cyathus striatus',
+    category: 'Musgos, Líquenes & Hongos (Roca 3D)',
+    description: 'Bejines piriformes cubiertos de aguijones perlados con ostiolo apical junto a pequeños cuencos fúngicos con peridiolos.',
+    params: {
+      engine: 'moss_fungi_rock', mossFungiArchetype: 'puffball_birds_nest',
+      rockScale: 1.05, rockRoughness: 0.68, mossCoverage: 0.82,
+      height: 1.9, radius: 0.44, showRoots: false,
+      branchCount: 7, leafScale: 1.15, leafDensity: 5,
+      barkType: 'fissured', tonalMode: 'natural_botanical',
+      colorTrunk: '#57534e', colorLeafMain: '#365314', colorLeafTip: '#f5f5f4', colorFlower: '#d6d3d1', colorAccent: '#a8a29e',
+      emissiveIntensity: 0.1, wetnessGloss: 0.3
+    }
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 8. MUNDO ACUÁTICO (CORALES, ESPONJAS, ANÉMONAS, KELP & ALGAS MARINAS)
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    id: 'aquatic_staghorn_coral',
+    name: 'Coral Cuerno de Ciervo Dorada (Staghorn Acropora)',
+    scientificName: 'Acropora cervicornis',
+    category: 'Mundo Acuático (Corales & Algas)',
+    description: 'Colonia arborescente de coral cuerno de ciervo dorado y turquesa con coralitos radiales sobre roca arrecifal.',
+    params: {
+      engine: 'aquatic_coral_algae', aquaticArchetype: 'staghorn_acropora',
+      rockScale: 1.0, height: 3.6, radius: 0.32, showRoots: false,
+      branchCount: 5, leafScale: 1.15, leafDensity: 5, gnarl: 0.22,
+      barkType: 'cactus_ribs', tonalMode: 'tri_tone_xenogradient',
+      colorTrunk: '#92400e', colorLeafMain: '#f59e0b', colorLeafTip: '#fef08a', colorFlower: '#fde047', colorAccent: '#38bdf8',
+      emissiveIntensity: 0.28, wetnessGloss: 0.55
+    }
+  },
+  {
+    id: 'aquatic_brain_coral',
+    name: 'Coral Cerebro Fluorescente (Brain Coral)',
+    scientificName: 'Diploria labyrinthiformis',
+    category: 'Mundo Acuático (Corales & Algas)',
+    description: 'Domos calcáreos laberínticos esculpidos con surcos profundos verdes y crestas bioluminiscentes sobre roca marina.',
+    params: {
+      engine: 'aquatic_coral_algae', aquaticArchetype: 'brain_coral_boulder',
+      rockScale: 1.15, height: 2.8, radius: 0.42, showRoots: false,
+      branchCount: 3, leafScale: 1.25, leafDensity: 5, gnarl: 0.2,
+      barkType: 'fissured', tonalMode: 'bioluminescent_abyss',
+      colorTrunk: '#0f172a', colorLeafMain: '#0d9488', colorLeafTip: '#4ade80', colorFlower: '#a3e635', colorAccent: '#22d3ee',
+      emissiveIntensity: 0.55, patternScale: 1.2, patternContrast: 0.7, wetnessGloss: 0.65
+    }
+  },
+  {
+    id: 'aquatic_gorgonian_fan',
+    name: 'Abanico de Mar Gorgonia Púrpura (Sea Fan)',
+    scientificName: 'Gorgonia ventalina',
+    category: 'Mundo Acuático (Corales & Algas)',
+    description: 'Abanico reticulado violeta y magenta de múltiples órdenes adaptado al flujo de la corriente arrecifal.',
+    params: {
+      engine: 'aquatic_coral_algae', aquaticArchetype: 'gorgonian_sea_fan',
+      rockScale: 0.95, height: 4.0, radius: 0.28, showRoots: false,
+      branchCount: 3, leafScale: 1.1, leafDensity: 5, gnarl: 0.25,
+      barkType: 'cactus_ribs', tonalMode: 'natural_botanical',
+      colorTrunk: '#4c1d95', colorLeafMain: '#9333ea', colorLeafTip: '#f472b6', colorFlower: '#fbcfe8', colorAccent: '#c084fc',
+      emissiveIntensity: 0.35, wetnessGloss: 0.5
+    }
+  },
+  {
+    id: 'aquatic_tube_sponge',
+    name: 'Esponjas Tubulares Estufa Violeta (Tube Sponge)',
+    scientificName: 'Aplysina archeri',
+    category: 'Mundo Acuático (Corales & Algas)',
+    description: 'Colonia de esponjas tubulares huecas con bocas ósculo abiertas y superficie porosa iridescente.',
+    params: {
+      engine: 'aquatic_coral_algae', aquaticArchetype: 'tube_sponge_cluster',
+      rockScale: 1.05, height: 3.8, radius: 0.34, showRoots: false,
+      branchCount: 6, leafScale: 1.15, leafDensity: 5, gnarl: 0.18,
+      barkType: 'cactus_ribs', tonalMode: 'iridescent_chitin',
+      colorTrunk: '#3b0764', colorLeafMain: '#7e22ce', colorLeafTip: '#e879f9', colorFlower: '#f0abfc', colorAccent: '#38bdf8',
+      emissiveIntensity: 0.38, iridescenceAmount: 0.55, wetnessGloss: 0.6
+    }
+  },
+  {
+    id: 'aquatic_giant_kelp',
+    name: 'Bosque de Kelp Gigante (Macrocystis Kelp)',
+    scientificName: 'Macrocystis pyrifera',
+    category: 'Mundo Acuático (Corales & Algas)',
+    description: 'Altos estípites ondulantes con vesículas flotadoras pneumatocistos y largas láminas rizadas doradas.',
+    params: {
+      engine: 'aquatic_coral_algae', aquaticArchetype: 'giant_kelp_forest',
+      rockScale: 1.1, height: 6.2, radius: 0.30, showRoots: false,
+      branchCount: 5, leafScale: 1.2, leafDensity: 5, gnarl: 0.38,
+      barkType: 'smooth_ash', tonalMode: 'natural_botanical',
+      colorTrunk: '#365314', colorLeafMain: '#4d7c0f', colorLeafTip: '#bef264', colorFlower: '#facc15', colorAccent: '#84cc16',
+      emissiveIntensity: 0.18, wetnessGloss: 0.85, windStrength: 0.65, windTurbulence: 0.45
+    }
+  },
+  {
+    id: 'aquatic_bull_kelp',
+    name: 'Kelp Toro Látigo Ámbar (Bull Kelp)',
+    scientificName: 'Nereocystis luetkeana',
+    category: 'Mundo Acuático (Corales & Algas)',
+    description: 'Látigos submarinos rematados por un bulbo neumático flotante coronado por cintas translúcidas.',
+    params: {
+      engine: 'aquatic_coral_algae', aquaticArchetype: 'bull_kelp_whip',
+      rockScale: 1.0, height: 5.8, radius: 0.28, showRoots: false,
+      branchCount: 4, leafScale: 1.15, leafDensity: 5, gnarl: 0.42,
+      barkType: 'smooth_ash', tonalMode: 'translucent_jelly',
+      colorTrunk: '#713f12', colorLeafMain: '#a16207', colorLeafTip: '#fde047', colorFlower: '#fef08a', colorAccent: '#f59e0b',
+      emissiveIntensity: 0.24, wetnessGloss: 0.9, windStrength: 0.65, windTurbulence: 0.45
+    }
+  },
+  {
+    id: 'aquatic_sea_anemone',
+    name: 'Anémona Corona Neón Cian & Rosa (Sea Anemone)',
+    scientificName: 'Actinia equina / Heteractis',
+    category: 'Mundo Acuático (Corales & Algas)',
+    description: 'Columna pedal carnosa con doble corona de tentáculos ondeantes y puntas nematocisto bioluminiscentes.',
+    params: {
+      engine: 'aquatic_coral_algae', aquaticArchetype: 'sea_anemone_tentacles',
+      rockScale: 1.05, height: 2.9, radius: 0.38, showRoots: false,
+      branchCount: 4, leafScale: 1.2, leafDensity: 5, gnarl: 0.3,
+      barkType: 'smooth_ash', tonalMode: 'bioluminescent_abyss',
+      colorTrunk: '#831843', colorLeafMain: '#ec4899', colorLeafTip: '#22d3ee', colorFlower: '#a5f3fc', colorAccent: '#00f5d4',
+      emissiveIntensity: 0.85, wetnessGloss: 0.82, windStrength: 0.6, windTurbulence: 0.5
+    }
+  },
+  {
+    id: 'aquatic_plate_montipora',
+    name: 'Coral Plato Espiral Turquesa (Montipora)',
+    scientificName: 'Montipora capricornis',
+    category: 'Mundo Acuático (Corales & Algas)',
+    description: 'Terrazas calcificadas en espiral de Fibonacci con bordes rizados magenta y centro aguamarina.',
+    params: {
+      engine: 'aquatic_coral_algae', aquaticArchetype: 'plate_montipora_whorl',
+      rockScale: 1.0, height: 3.2, radius: 0.36, showRoots: false,
+      branchCount: 5, leafScale: 1.15, leafDensity: 5, gnarl: 0.2,
+      barkType: 'pine_plates', tonalMode: 'striated_banded',
+      colorTrunk: '#164e63', colorLeafMain: '#06b6d4', colorLeafTip: '#f472b6', colorFlower: '#fbcfe8', colorAccent: '#22d3ee',
+      emissiveIntensity: 0.32, patternScale: 1.4, patternContrast: 0.65, wetnessGloss: 0.5
+    }
+  },
+  {
+    id: 'aquatic_organ_pipe_coral',
+    name: 'Coral Tubo de Órgano & Pólipos Estrella (Tubipora)',
+    scientificName: 'Tubipora musica',
+    category: 'Mundo Acuático (Corales & Algas)',
+    description: 'Haz de tubos calcáreos rojo coral coronados por pólipos estrellados octocorales blanco-verde.',
+    params: {
+      engine: 'aquatic_coral_algae', aquaticArchetype: 'pillar_organ_pipe_coral',
+      rockScale: 1.0, height: 3.0, radius: 0.36, showRoots: false,
+      branchCount: 5, leafScale: 1.1, leafDensity: 5, gnarl: 0.15,
+      barkType: 'cactus_ribs', tonalMode: 'natural_botanical',
+      colorTrunk: '#881337', colorLeafMain: '#e11d48', colorLeafTip: '#a7f3d0', colorFlower: '#ecfdf5', colorAccent: '#34d399',
+      emissiveIntensity: 0.3, wetnessGloss: 0.45
+    }
+  },
+  {
+    id: 'aquatic_red_dulse',
+    name: 'Alga Roja Dulse & Abanico Rubí (Palmaria)',
+    scientificName: 'Palmaria palmata',
+    category: 'Mundo Acuático (Corales & Algas)',
+    description: 'Láminas anchas translúcidas carmesí y escarlata bifurcadas que ondulan suavemente bajo el agua.',
+    params: {
+      engine: 'aquatic_coral_algae', aquaticArchetype: 'red_seaweed_dulse',
+      rockScale: 1.0, height: 3.5, radius: 0.32, showRoots: false,
+      branchCount: 5, leafScale: 1.2, leafDensity: 5, gnarl: 0.35,
+      barkType: 'smooth_ash', tonalMode: 'translucent_jelly',
+      colorTrunk: '#450a0a', colorLeafMain: '#b91c1c', colorLeafTip: '#fb7185', colorFlower: '#fda4af', colorAccent: '#f43f5e',
+      emissiveIntensity: 0.25, wetnessGloss: 0.88, windStrength: 0.6, windTurbulence: 0.45
+    }
+  },
+  {
+    id: 'aquatic_bladder_wrack',
+    name: 'Sargazo Dorado & Vesículas Aeríferas (Sargassum)',
+    scientificName: 'Sargassum natans',
+    category: 'Mundo Acuático (Corales & Algas)',
+    description: 'Matas marinas de frondas bifurcadas color bronce dorado con vesículas flotadoras esféricas.',
+    params: {
+      engine: 'aquatic_coral_algae', aquaticArchetype: 'bladder_wrack_sargassum',
+      rockScale: 1.0, height: 3.8, radius: 0.30, showRoots: false,
+      branchCount: 5, leafScale: 1.15, leafDensity: 5, gnarl: 0.35,
+      barkType: 'smooth_ash', tonalMode: 'natural_botanical',
+      colorTrunk: '#78350f', colorLeafMain: '#b45309', colorLeafTip: '#fbbf24', colorFlower: '#fde047', colorAccent: '#f59e0b',
+      emissiveIntensity: 0.18, wetnessGloss: 0.78, windStrength: 0.6, windTurbulence: 0.4
+    }
+  },
+  {
+    id: 'aquatic_posidonia_seagrass',
+    name: 'Pradera de Posidonia Oceánica (Seagrass)',
+    scientificName: 'Posidonia oceanica',
+    category: 'Mundo Acuático (Corales & Algas)',
+    description: 'Denso penacho de largas cintas verdes esmeralda arqueadas sobre roca submarina mediterránea.',
+    params: {
+      engine: 'aquatic_coral_algae', aquaticArchetype: 'seagrass_posidonia_meadow',
+      rockScale: 1.1, height: 3.2, radius: 0.36, showRoots: false,
+      branchCount: 6, leafScale: 1.2, leafDensity: 6, gnarl: 0.4,
+      barkType: 'smooth_ash', tonalMode: 'natural_botanical',
+      colorTrunk: '#14532d', colorLeafMain: '#15803d', colorLeafTip: '#4ade80', colorFlower: '#a3e635', colorAccent: '#22c55e',
+      emissiveIntensity: 0.14, wetnessGloss: 0.65, windStrength: 0.65, windTurbulence: 0.45
+    }
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 9. CREADAS POR IA & COMBINACIÓN MODULAR DE ELEMENTOS
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    id: 'composed_spiral_volute_liana',
+    name: 'Liana en Espiral & Volutas Foliares (Spiral Vine)',
+    scientificName: 'Spiraea voluta scandens',
+    category: 'Creadas por IA & Combinación de Elementos',
+    description: 'Tronco leñoso trenzado en S que se bifurca en brazos enrollados en voluta espiral con hojas verdes brotando a lo largo del tallo y zarcillos colgantes.',
+    params: {
+      engine: 'composed_custom',
+      foliageType: 'ai_custom_element',
+      barkType: 'fibrous_redwood',
+      tonalMode: 'natural_botanical',
+      height: 5.4,
+      radius: 0.28,
+      gnarl: 0.72,
+      leafScale: 1.15,
+      leafDensity: 5,
+      showRoots: true,
+      rootCount: 7,
+      rootLength: 1.35,
+      colorTrunk: '#5c4028',
+      colorLeafMain: '#3f7a1d',
+      colorLeafTip: '#84cc16',
+      colorFlower: '#a3e635',
+      colorAccent: '#65a30d',
+      customElement: {
+        id: 'el_spiral_volute_liana',
+        name: 'Liana en Espiral con Volutas & Zarcillos',
+        scientificName: 'Spiraea voluta scandens',
+        description: 'Brazos rizados en espiral logarítmica con lianas trenzadas, hojas adheridas al tallo y zarcillos.',
+        createdAt: 1731700000001,
+        stemStructure: 'spiral_volute_vine',
+        canopyElement: 'stem_hugging_leaves',
+        surfaceElement: 'braided_vines',
+        hangingElement: 'curling_tendrils',
+        spiralTurns: 1.45,
+        spiralArms: 2,
+        thornDensity: 0.0,
+        thornLength: 0.8,
+        filamentCount: 10,
+        filamentLength: 1.05,
+        padLayers: 5,
+        lobeCount: 1,
+        cupDepth: 0.25,
+      },
+    },
+  },
+  {
+    id: 'composed_crimson_cloud_bonsai',
+    name: 'Bonsái Carmesí de Nubes & Filamentos (Crimson Bonsai)',
+    scientificName: 'Acer rubrum nubilus',
+    category: 'Creadas por IA & Combinación de Elementos',
+    description: 'Fuste bonsái centenario retorcido en S con fibras oscuras trenzadas, copas estratificadas en nubes carmesí y filamentos rojos colgantes.',
+    params: {
+      engine: 'composed_custom',
+      foliageType: 'ai_custom_element',
+      barkType: 'fissured',
+      tonalMode: 'natural_botanical',
+      height: 5.2,
+      radius: 0.34,
+      gnarl: 0.82,
+      leafScale: 1.18,
+      leafDensity: 6,
+      showRoots: true,
+      rootCount: 8,
+      rootLength: 1.45,
+      colorTrunk: '#2b1d19',
+      colorLeafMain: '#881337',
+      colorLeafTip: '#dc2626',
+      colorFlower: '#f43f5e',
+      colorAccent: '#ef4444',
+      customElement: {
+        id: 'el_crimson_cloud_bonsai',
+        name: 'Bonsái de Nubes Carmesí & Hilos Aéreos',
+        scientificName: 'Acer rubrum nubilus',
+        description: 'Tronco bonsái sinuoso con almohadillas de follaje rojo y filamentos aéreos colgantes.',
+        createdAt: 1731700000002,
+        stemStructure: 'gnarled_bonsai',
+        canopyElement: 'cloud_bonsai_pads',
+        surfaceElement: 'braided_vines',
+        hangingElement: 'weeping_filaments',
+        spiralTurns: 1.1,
+        spiralArms: 2,
+        thornDensity: 0.0,
+        thornLength: 0.7,
+        filamentCount: 16,
+        filamentLength: 1.25,
+        padLayers: 6,
+        lobeCount: 5,
+        cupDepth: 0.3,
+      },
+    },
+  },
+  {
+    id: 'composed_spinecrown_thorns',
+    name: 'Corona de Espinas & Racimos Violeta (Spinecrown)',
+    scientificName: 'Xenocorona sporangia',
+    category: 'Creadas por IA & Combinación de Elementos',
+    description: 'Corona en roseta de tallos óseos curvos erizados de espinas afiladas con racimos de bulbos de esporas violáceos translúcidos y raíces radiales.',
+    params: {
+      engine: 'composed_custom',
+      foliageType: 'ai_custom_element',
+      barkType: 'cactus_ribs',
+      tonalMode: 'tri_tone_xenogradient',
+      height: 4.4,
+      radius: 0.28,
+      gnarl: 0.55,
+      leafScale: 1.1,
+      leafDensity: 5,
+      showRoots: true,
+      rootCount: 14,
+      rootLength: 1.65,
+      colorTrunk: '#a89078',
+      colorLeafMain: '#6d28d9',
+      colorLeafTip: '#c084fc',
+      colorFlower: '#a855f7',
+      colorAccent: '#e879f9',
+      emissiveIntensity: 0.35,
+      wetnessGloss: 0.45,
+      customElement: {
+        id: 'el_spinecrown_thorns',
+        name: 'Corona de Cuernos Espinosos & Bulbos Violeta',
+        scientificName: 'Xenocorona sporangia',
+        description: 'Roseta de tallos curvos con aguijones 3D y racimos de esporas violáceas entre las espinas.',
+        createdAt: 1731700000003,
+        stemStructure: 'thorny_horn_crown',
+        canopyElement: 'thorn_spur_clusters',
+        surfaceElement: 'curved_thorns_spines',
+        hangingElement: 'mycelial_fuzz',
+        spiralTurns: 1.0,
+        spiralArms: 3,
+        thornDensity: 1.25,
+        thornLength: 1.15,
+        filamentCount: 8,
+        filamentLength: 0.9,
+        padLayers: 5,
+        lobeCount: 4,
+        cupDepth: 0.45,
+      },
+    },
+  },
+  {
+    id: 'composed_serpentine_mossy_trunk',
+    name: 'Tronco Serpenteante con Musgo Briófito (Mossy Deadwood)',
+    scientificName: 'Lignum contortum bryophyta',
+    category: 'Creadas por IA & Combinación de Elementos',
+    description: 'Tronco de madera muerta envejecida en doble curva S con surcos helicoidales, muñones leñosos rotos y cojines densos de musgo briófito verde esmeralda adheridos a las crestas dorsales.',
+    params: {
+      engine: 'composed_custom',
+      foliageType: 'ai_custom_element',
+      barkType: 'mossy_deadwood',
+      tonalMode: 'natural_botanical',
+      height: 4.8,
+      radius: 0.34,
+      gnarl: 0.85,
+      leafScale: 1.15,
+      leafDensity: 6,
+      showRoots: true,
+      rootCount: 6,
+      rootLength: 1.25,
+      colorTrunk: '#583e2a',
+      colorLeafMain: '#4a7c1d',
+      colorLeafTip: '#7cb524',
+      colorFlower: '#5a8f22',
+      colorAccent: '#8cc63f',
+      customElement: {
+        id: 'el_serpentine_mossy_trunk',
+        name: 'Tronco Serpenteante con Manto de Musgo Briófito',
+        scientificName: 'Lignum contortum bryophyta',
+        description: 'Madera muerta retorcida en doble S con muñones cortos y manto de musgo aterciopelado sin hojas.',
+        createdAt: 1731700000004,
+        stemStructure: 'serpentine_mossy_deadwood',
+        canopyElement: 'moss_velvet_mantle',
+        surfaceElement: 'moss_lichen_bark',
+        hangingElement: 'mycelial_fuzz',
+        synthesizedTipPrimitive: 'bryophyte_moss_pad',
+        synthesizedBasalFoliage: 'none',
+        spiralTurns: 1.35,
+        spiralArms: 3,
+        thornDensity: 0,
+        thornLength: 0.5,
+        filamentCount: 12,
+        filamentLength: 0.75,
+        padLayers: 7,
+        lobeCount: 3,
+        cupDepth: 0.35,
+        trunkBentS: 0.84,
+        branchSpread: 0.52,
+        branchDroop: 0.08,
+      },
+    },
+  },
+  {
+    id: 'composed_strangler_banyan_roots',
+    name: 'Enredadera de Raíces Estranguladoras Banyan (Root Cage)',
+    scientificName: 'Ficus benghalensis radicis',
+    category: 'Creadas por IA & Combinación de Elementos',
+    description: 'Jaula reticulada de raíces aéreas entrelazadas y arcos zanco con cortinas de raíces colgantes y frondas tropicales fenestradas.',
+    params: {
+      engine: 'composed_custom',
+      foliageType: 'ai_custom_element',
+      barkType: 'strangler_vine_lattice',
+      tonalMode: 'natural_botanical',
+      height: 5.6,
+      radius: 0.38,
+      gnarl: 0.72,
+      leafScale: 1.25,
+      leafDensity: 6,
+      showRoots: true,
+      rootCount: 12,
+      rootLength: 1.85,
+      colorTrunk: '#4a3525',
+      colorLeafMain: '#15803d',
+      colorLeafTip: '#4ade80',
+      colorFlower: '#86efac',
+      colorAccent: '#22c55e',
+      customElement: {
+        id: 'el_strangler_banyan_roots',
+        name: 'Jaula de Raíces Estranguladoras & Monstera',
+        scientificName: 'Ficus benghalensis radicis',
+        description: 'Enredadera de raíces aéreas anastomosadas con cortinas colgantes y hojas fenestradas.',
+        createdAt: 1731700000005,
+        stemStructure: 'strangler_root_cage',
+        canopyElement: 'fenestrated_monstera_leaves',
+        surfaceElement: 'strangler_root_web',
+        hangingElement: 'aerial_root_curtains',
+        synthesizedTipPrimitive: 'lanceolate_blade',
+        synthesizedBasalFoliage: 'fern_fiddleheads',
+        spiralTurns: 1.4,
+        spiralArms: 4,
+        thornDensity: 0,
+        thornLength: 0.5,
+        filamentCount: 16,
+        filamentLength: 1.4,
+        padLayers: 6,
+        lobeCount: 5,
+        cupDepth: 0.3,
+        trunkBentS: 0.48,
+        branchSpread: 0.78,
+      },
+    },
+  },
+  {
+    id: 'composed_scifi_plasma_globe_tree',
+    name: 'Árbol Sci-Fi de Globos de Plasma & Venas Neón (Plasma Orbs)',
+    scientificName: 'Xenosphaera plasmatica',
+    category: 'Creadas por IA & Combinación de Elementos',
+    description: 'Cuna xenobotánica con shader de venas bioluminiscentes en el tronco, globos de plasma translúcidos con anillos orbitales y farolillos suspendidos.',
+    params: {
+      engine: 'composed_custom',
+      foliageType: 'ai_custom_element',
+      barkType: 'scifi_biolum_veins',
+      tonalMode: 'bioluminescent_abyss',
+      height: 5.2,
+      radius: 0.32,
+      gnarl: 0.65,
+      leafScale: 1.3,
+      leafDensity: 6,
+      showRoots: true,
+      rootCount: 9,
+      rootLength: 1.5,
+      colorTrunk: '#1e1b4b',
+      colorLeafMain: '#0284c7',
+      colorLeafTip: '#22d3ee',
+      colorFlower: '#f472b6',
+      colorAccent: '#00f5d4',
+      emissiveIntensity: 0.92,
+      iridescenceAmount: 0.65,
+      wetnessGloss: 0.75,
+      customElement: {
+        id: 'el_scifi_plasma_globe_tree',
+        name: 'Cuna Sci-Fi de Globos de Plasma Orbitales',
+        scientificName: 'Xenosphaera plasmatica',
+        description: 'Pedúnculos xenobotánicos sosteniendo globos de plasma con meridianos luminosos y farolillos colgantes.',
+        createdAt: 1731700000006,
+        stemStructure: 'scifi_tendril_cradle',
+        canopyElement: 'scifi_biolum_plasma_globes',
+        surfaceElement: 'biolum_nodule_pustules',
+        hangingElement: 'tethered_scifi_lantern_globes',
+        synthesizedTipPrimitive: 'scifi_plasma_orb',
+        synthesizedBasalFoliage: 'spiny_succulent_claws',
+        spiralTurns: 1.3,
+        spiralArms: 4,
+        thornDensity: 0.8,
+        thornLength: 0.85,
+        filamentCount: 14,
+        filamentLength: 1.2,
+        padLayers: 6,
+        lobeCount: 6,
+        cupDepth: 0.6,
+        trunkBentS: 0.55,
+        branchSpread: 0.82,
+      },
+    },
+  },
+  {
+    id: 'composed_imperial_lotus_seed_crown',
+    name: 'Corona Imperial de Pétalos, Púas & Semillas (Lotus Crown)',
+    scientificName: 'Nelumbo regalis coronata',
+    category: 'Creadas por IA & Combinación de Elementos',
+    description: 'Tallos trenzados en hélice con aguijones ganchudos de rosal, coronas imperiales de pétalos acopados con receptáculo de semillas doradas y sámaras aladas.',
+    params: {
+      engine: 'composed_custom',
+      foliageType: 'ai_custom_element',
+      barkType: 'eucalyptus_rainbow',
+      tonalMode: 'natural_botanical',
+      height: 4.9,
+      radius: 0.28,
+      gnarl: 0.58,
+      leafScale: 1.28,
+      leafDensity: 5,
+      showRoots: true,
+      rootCount: 7,
+      rootLength: 1.3,
+      colorTrunk: '#5c2d38',
+      colorLeafMain: '#be185d',
+      colorLeafTip: '#fbcfe8',
+      colorFlower: '#facc15',
+      colorAccent: '#f43f5e',
+      customElement: {
+        id: 'el_imperial_lotus_seed_crown',
+        name: 'Corona de Pétalos Imperiales & Semillero Real',
+        scientificName: 'Nelumbo regalis coronata',
+        description: 'Troncos trenzados con aguijones de rosal, coronas de pétalos multicapa y racimos de semillas aladas.',
+        createdAt: 1731700000007,
+        stemStructure: 'braided_helix_trunks',
+        canopyElement: 'lotus_magnolia_corolla_crown',
+        surfaceElement: 'rose_hooked_prickles',
+        hangingElement: 'winged_samara_seeds',
+        synthesizedTipPrimitive: 'crowned_pomegranate_pod',
+        synthesizedBasalFoliage: 'broad_rosette_leaves',
+        spiralTurns: 1.6,
+        spiralArms: 3,
+        thornDensity: 1.15,
+        thornLength: 0.9,
+        filamentCount: 12,
+        filamentLength: 1.0,
+        padLayers: 5,
+        lobeCount: 8,
+        cupDepth: 0.55,
+        petalOpenness: 0.72,
+      },
+    },
+  },
+];
+
+

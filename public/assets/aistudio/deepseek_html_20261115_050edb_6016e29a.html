@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Tree Gen Pro v4.2 - Botanical Studio</title>
+<style>
+  :root { --bg-panel: rgba(15,20,25,.92); --border: rgba(255,255,255,.1); --accent: #4ade80; --accent-hover: #22c55e; --accent-soft: rgba(74,222,128,.15); --text: #f1f5f9; --text-muted: #94a3b8; }
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+  body { overflow: hidden; background: #0b1220; color: var(--text); }
+  #canvas-container { width: 100vw; height: 100vh; display: block; }
+  #ui-panel { position: absolute; top: 14px; left: 14px; width: 340px; max-height: calc(100vh - 28px); background: var(--bg-panel); backdrop-filter: blur(16px) saturate(140%); border: 1px solid var(--border); border-radius: 14px; padding: 14px; overflow-y: auto; box-shadow: 0 20px 50px rgba(0,0,0,.55); }
+  #ui-panel::-webkit-scrollbar { width: 6px; } #ui-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,.15); border-radius: 3px; }
+  header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+  header h1 { font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .badge { font-size: 10px; background: var(--accent-soft); color: var(--accent); padding: 2px 7px; border-radius: 99px; border: 1px solid rgba(74,222,128,.3); font-weight: 600; }
+  details.section { margin-bottom: 10px; background: rgba(255,255,255,.03); border-radius: 10px; border: 1px solid rgba(255,255,255,.05); overflow: hidden; }
+  details.section[open] { background: rgba(255,255,255,.045); }
+  details.section > summary { cursor: pointer; list-style: none; padding: 10px 12px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); font-weight: 700; display: flex; justify-content: space-between; align-items: center; user-select: none; }
+  details.section > summary:hover { color: var(--text); }
+  details.section > summary::-webkit-details-marker { display: none; }
+  details.section > summary::before { content: '▸'; display: inline-block; margin-right: 8px; transition: transform .25s; font-size: 10px; color: var(--accent); }
+  details.section[open] > summary::before { transform: rotate(90deg); }
+  details.section > summary .summary-tag { margin-left: auto; font-size: 9px; padding: 1px 6px; border-radius: 6px; background: rgba(255,255,255,.06); color: var(--text-muted); font-weight: 600; }
+  .section-body { padding: 0 12px 12px 12px; }
+  .control-row { margin-bottom: 9px; } .control-row:last-child { margin-bottom: 0; }
+  .label-row { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; }
+  .val-display { color: var(--accent); font-family: Consolas, monospace; font-weight: 600; font-size: 11.5px; }
+  input[type="range"] { width: 100%; accent-color: var(--accent); height: 5px; cursor: pointer; background: rgba(255,255,255,.08); border-radius: 3px; }
+  select, input[type="number"] { width: 100%; background: rgba(0,0,0,.4); border: 1px solid var(--border); color: var(--text); padding: 7px 9px; border-radius: 7px; font-size: 12px; outline: none; }
+  select:focus, input:focus { border-color: var(--accent); background: rgba(0,0,0,.55); }
+  optgroup { background: #1e293b; color: #94a3b8; font-weight: 700; font-size: 11px; }
+  option { background: #0f172a; color: #f1f5f9; }
+  .quality-grid, .season-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+  .quality-btn, .season-btn { background: rgba(255,255,255,.05); border: 1px solid var(--border); color: var(--text); padding: 7px 2px; border-radius: 7px; font-size: 11px; cursor: pointer; transition: .2s; font-weight: 600; }
+  .quality-btn:hover, .season-btn:hover { background: rgba(255,255,255,.1); }
+  .quality-btn.active, .season-btn.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .color-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
+  .color-item { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 11px; color: var(--text-muted); }
+  input[type="color"] { width: 100%; height: 28px; border: none; border-radius: 6px; background: none; cursor: pointer; padding: 0; }
+  input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+  input[type="color"]::-webkit-color-swatch { border: 1px solid var(--border); border-radius: 6px; }
+  .seed-row { display: flex; gap: 6px; }
+  .btn { background: var(--accent); color: #052e16; border: none; padding: 9px; border-radius: 8px; font-weight: 700; font-size: 12px; cursor: pointer; width: 100%; transition: .2s; }
+  .btn:hover { background: var(--accent-hover); }
+  .btn-secondary { background: rgba(255,255,255,.1); color: var(--text); width: auto; padding: 7px 12px; }
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; font-size: 12px; cursor: pointer; padding: 3px 0; }
+  input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
+  #preset-info { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: rgba(74,222,128,.06); border: 1px solid rgba(74,222,128,.18); font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+  #preset-info b { color: var(--accent); font-weight: 600; }
+  #preset-info .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin: 0 3px -1px 0; border: 1px solid rgba(255,255,255,.2); }
+  .conditional { display: none; } .conditional.visible { display: block; animation: fadeIn .25s ease; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: translateY(0); } }
+  #stats-bar { position: absolute; bottom: 14px; right: 14px; background: var(--bg-panel); backdrop-filter: blur(10px); border: 1px solid var(--border); border-radius: 10px; padding: 8px 14px; font-size: 12px; display: flex; gap: 14px; color: var(--text-muted); }
+  #stats-bar span b { color: var(--text); font-family: Consolas, monospace; }
+  #stats-bar .quality-tag { color: var(--accent); font-weight: 600; text-transform: uppercase; font-size: 10px; }
+  #ui-hint { font-size: 10px; color: var(--text-muted); text-align: center; padding: 8px 0 4px; border-top: 1px solid var(--border); margin-top: 8px; }
+  #ui-hint kbd { background: rgba(255,255,255,.08); padding: 1px 5px; border-radius: 3px; border: 1px solid var(--border); font-family: inherit; font-size: 10px; }
+</style>
+</head>
+<body>
+<div id="canvas-container"></div>
+<aside id="ui-panel">
+  <header><h1>🌿 Tree Gen Pro <span class="badge">v4.2</span></h1></header>
+
+  <details class="section" open>
+    <summary>Calidad Gráfica <span class="summary-tag" id="quality-tag">Alta</span></summary>
+    <div class="section-body">
+      <div class="quality-grid" id="quality-buttons">
+        <button class="quality-btn" data-quality="low">Baja</button>
+        <button class="quality-btn" data-quality="medium">Media</button>
+        <button class="quality-btn active" data-quality="high">Alta</button>
+        <button class="quality-btn" data-quality="ultra">Ultra</button>
+      </div>
+    </div>
+  </details>
+
+  <details class="section" open>
+    <summary>Librería Botánica <span class="summary-tag">64 sp.</span></summary>
+    <div class="section-body">
+      <select id="preset-select"></select>
+      <div class="seed-row" style="margin-top:8px">
+        <input type="number" id="seed-input" value="4210" min="1" max="99999" />
+        <button class="btn btn-secondary" id="btn-random-seed" title="Nueva Semilla">🎲</button>
+      </div>
+      <div id="preset-info"></div>
+    </div>
+  </details>
+
+  <details class="section">
+    <summary>Entorno & Estación</summary>
+    <div class="section-body">
+      <div class="season-grid" id="season-buttons" style="margin-bottom:8px;">
+        <button class="season-btn" data-season="spring">🌸 Prim.</button>
+        <button class="season-btn active" data-season="summer">☀️ Verano</button>
+        <button class="season-btn" data-season="autumn">🍂 Otoño</button>
+        <button class="season-btn" data-season="winter">❄️ Invier.</button>
+      </div>
+      <label class="toggle-row"><span>🌬️ Viento en tiempo real</span><input type="checkbox" id="wind-toggle" checked /></label>
+      <label class="toggle-row"><span>🌱 Mostrar Raíces</span><input type="checkbox" id="root-toggle" checked /></label>
+    </div>
+  </details>
+
+  <details class="section">
+    <summary>Arquitectura & Tronco</summary>
+    <div class="section-body">
+      <div class="control-row">
+        <div class="label-row"><span>Motor</span></div>
+        <select id="engine-select">
+          <option value="sympodial">Sympodial (Frondoso)</option>
+          <option value="monopodial">Monopodial (Conífera)</option>
+          <option value="palm">Palmera / Tropical</option>
+          <option value="bamboo">Bambú / Cañas</option>
+          <option value="cactus">Cactus / Suculenta</option>
+          <option value="rosette">Roseta (Agave/Aloe)</option>
+        </select>
+      </div>
+      <div class="control-row"><div class="label-row"><span>Niveles</span><span class="val-display" id="val-levels">4</span></div><input type="range" id="levels" min="2" max="5" step="1" value="4" /></div>
+      <div class="control-row"><div class="label-row"><span>Altura Base</span><span class="val-display" id="val-height">4.2</span></div><input type="range" id="height" min="0.5" max="10" step="0.1" value="4.2" /></div>
+      <div class="control-row"><div class="label-row"><span>Radio Base</span><span class="val-display" id="val-radius">0.42</span></div><input type="range" id="radius" min="0.05" max="1.2" step="0.02" value="0.42" /></div>
+      <div class="control-row"><div class="label-row"><span>Conicidad</span><span class="val-display" id="val-taper">0.70</span></div><input type="range" id="taper" min="0.45" max="0.95" step="0.01" value="0.70" /></div>
+    </div>
+  </details>
+
+  <details class="section">
+    <summary>Ramificación</summary>
+    <div class="section-body">
+      <div class="control-row"><div class="label-row"><span>Ángulo</span><span class="val-display" id="val-angle">38°</span></div><input type="range" id="angle" min="12" max="90" step="1" value="38" /></div>
+      <div class="control-row"><div class="label-row"><span>Reducción Long.</span><span class="val-display" id="val-decay">0.76</span></div><input type="range" id="decay" min="0.45" max="0.92" step="0.01" value="0.76" /></div>
+      <div class="control-row"><div class="label-row"><span>Ruido / Curva</span><span class="val-display" id="val-noise">0.28</span></div><input type="range" id="noise" min="0" max="0.85" step="0.02" value="0.28" /></div>
+      <div class="control-row"><div class="label-row"><span>Gravedad</span><span class="val-display" id="val-gravity">0.12</span></div><input type="range" id="gravity" min="-0.65" max="0.65" step="0.02" value="0.12" /></div>
+    </div>
+  </details>
+
+  <details class="section">
+    <summary>Follaje & Paleta</summary>
+    <div class="section-body">
+      <div class="control-row">
+        <div class="label-row"><span>Geometría de Hoja</span></div>
+        <select id="foliageType">
+          <option value="icosahedron">Clusters Orgánicos</option>
+          <option value="cone">Conos (Low-Poly)</option>
+          <option value="dodecahedron">Poliedros Facetados</option>
+          <option value="needles">Agujas (Coníferas)</option>
+          <option value="leafCards">Hojas Individuales</option>
+          <option value="succulentLeaves">Hojas Suculentas</option>
+          <option value="fronds">Frondas de Palmera</option>
+          <option value="fernFronds">Frondas de Helecho</option>
+          <option value="paddleLeaves">Hojas Anchas (Banana)</option>
+          <option value="bambooLeaves">Hojas de Bambú</option>
+          <option value="hangingVines">Ramas Colgantes</option>
+          <option value="grassBlades">Briznas (Lavanda)</option>
+          <option value="flowers">Arbusto Florido</option>
+          <option value="berryClusters">Bayas / Acebo</option>
+          <option value="none">Sin Hojas</option>
+        </select>
+      </div>
+      <div class="control-row"><div class="label-row"><span>Escala Copa</span><span class="val-display" id="val-leafScale">1.35</span></div><input type="range" id="leafScale" min="0.3" max="3.0" step="0.05" value="1.35" /></div>
+      <div class="control-row"><div class="label-row"><span>Densidad</span><span class="val-display" id="val-leafDensity">3</span></div><input type="range" id="leafDensity" min="1" max="5" step="1" value="3" /></div>
+      <div class="color-grid">
+        <div class="color-item"><input type="color" id="colorTrunk" value="#5c4033" /><span>Tronco</span></div>
+        <div class="color-item"><input type="color" id="colorLeafMain" value="#2d6a4f" /><span>Copa</span></div>
+        <div class="color-item"><input type="color" id="colorLeafTip" value="#74c69d" /><span>Luz/Flor</span></div>
+      </div>
+    </div>
+  </details>
+
+  <details class="section conditional" id="conifer-section">
+    <summary>Parámetros Conífera <span class="summary-tag">agujas</span></summary>
+    <div class="section-body">
+      <div class="control-row"><div class="label-row"><span>Largo de Aguja</span><span class="val-display" id="val-needleLength">1.0</span></div><input type="range" id="needleLength" min="0.4" max="2.0" step="0.05" value="1.0" /></div>
+      <div class="control-row"><div class="label-row"><span>Densidad de Pincel</span><span class="val-display" id="val-needleDensity">7</span></div><input type="range" id="needleDensity" min="4" max="14" step="1" value="7" /></div>
+    </div>
+  </details>
+
+  <details class="section conditional" id="cactus-section">
+    <summary>Parámetros Cactus <span class="summary-tag">saguaro</span></summary>
+    <div class="section-body">
+      <div class="control-row"><div class="label-row"><span>Nº Costillas</span><span class="val-display" id="val-cactusRibs">8</span></div><input type="range" id="cactusRibs" min="5" max="14" step="1" value="8" /></div>
+      <div class="control-row"><div class="label-row"><span>Densidad Espinas</span><span class="val-display" id="val-spineDensity">1.0</span></div><input type="range" id="spineDensity" min="0" max="2" step="0.1" value="1.0" /></div>
+      <div class="control-row"><div class="label-row"><span>Prob. Brazos</span><span class="val-display" id="val-armProbability">0.65</span></div><input type="range" id="armProbability" min="0" max="1" step="0.05" value="0.65" /></div>
+    </div>
+  </details>
+
+  <button class="btn" id="btn-export">⬇️ Exportar .GLB</button>
+  <div id="ui-hint">Arrastra para orbitar · <kbd>R</kbd> regen aleatorio</div>
+</aside>
+
+<div id="stats-bar">
+  <span>Triángulos: <b id="stat-tris">0</b></span>
+  <span>Calidad: <b class="quality-tag" id="stat-quality">ALTA</b></span>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.169.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.169.0/examples/jsm/" } }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+
+/* ═══════════════════════════════════════════════════════════
+   LIBRERÍA BOTÁNICA (64 ESPECIES)
+═══════════════════════════════════════════════════════════ */
+const LIBRARY = [
+  {
+    category: "🌲 Coníferas",
+    items: {
+      pine: { name: "Pine (Pino)", engine: "monopodial", levels: 4, height: 6.4, radius: 0.32, taper: 0.65, angle: 68, decay: 0.68, noise: 0.08, gravity: -0.10, foliageType: "needles", leafScale: 1.55, leafDensity: 4, needleLength: 0.9, needleDensity: 8, colorTrunk: "#4a3222", colorLeafMain: "#1b4332", colorLeafTip: "#52b788" },
+      spruce: { name: "Spruce (Picea)", engine: "monopodial", levels: 4, height: 5.8, radius: 0.28, taper: 0.62, angle: 70, decay: 0.70, noise: 0.06, gravity: -0.08, foliageType: "needles", leafScale: 1.30, leafDensity: 5, needleLength: 0.65, needleDensity: 9, colorTrunk: "#4a3728", colorLeafMain: "#1e3a2e", colorLeafTip: "#5a8f5a" },
+      fir: { name: "Fir (Abeto)", engine: "monopodial", levels: 4, height: 6.0, radius: 0.30, taper: 0.60, angle: 75, decay: 0.68, noise: 0.05, gravity: -0.10, foliageType: "needles", leafScale: 1.20, leafDensity: 5, needleLength: 0.8, needleDensity: 10, colorTrunk: "#45301c", colorLeafMain: "#1a3d2e", colorLeafTip: "#4a7c59" },
+      cedar: { name: "Cedar (Cedro)", engine: "monopodial", levels: 4, height: 7.0, radius: 0.34, taper: 0.66, angle: 72, decay: 0.70, noise: 0.10, gravity: -0.05, foliageType: "needles", leafScale: 1.35, leafDensity: 4, needleLength: 0.85, needleDensity: 7, colorTrunk: "#5c4033", colorLeafMain: "#2d4a2b", colorLeafTip: "#6b8f71" },
+      cupressus: { name: "Cupressus (Ciprés)", engine: "monopodial", levels: 4, height: 7.5, radius: 0.26, taper: 0.64, angle: 25, decay: 0.72, noise: 0.05, gravity: 0.25, foliageType: "needles", leafScale: 0.95, leafDensity: 6, needleLength: 0.55, needleDensity: 12, colorTrunk: "#4a3b32", colorLeafMain: "#283618", colorLeafTip: "#606c38" },
+      redwood: { name: "Secuoya", engine: "monopodial", levels: 5, height: 8.6, radius: 0.78, taper: 0.68, angle: 65, decay: 0.72, noise: 0.06, gravity: -0.05, foliageType: "needles", leafScale: 1.85, leafDensity: 4, needleLength: 1.2, needleDensity: 8, colorTrunk: "#7f2714", colorLeafMain: "#1e4620", colorLeafTip: "#3a7d44" }
+    }
+  },
+  {
+    category: "🌳 Frondosos",
+    items: {
+      oak: { name: "Oak (Roble)", engine: "sympodial", levels: 4, height: 4.4, radius: 0.48, taper: 0.68, angle: 42, decay: 0.76, noise: 0.30, gravity: 0.12, foliageType: "leafCards", leafScale: 1.50, leafDensity: 4, colorTrunk: "#583e2e", colorLeafMain: "#2d6a4f", colorLeafTip: "#74c69d" },
+      betula: { name: "Betula (Abedul)", engine: "sympodial", levels: 4, height: 6.2, radius: 0.24, taper: 0.72, angle: 34, decay: 0.75, noise: 0.22, gravity: 0.15, foliageType: "leafCards", leafScale: 1.15, leafDensity: 4, colorTrunk: "#e2e8f0", colorLeafMain: "#65a30d", colorLeafTip: "#bef264" },
+      beech: { name: "Beech (Haya)", engine: "sympodial", levels: 4, height: 5.4, radius: 0.42, taper: 0.70, angle: 38, decay: 0.78, noise: 0.20, gravity: 0.18, foliageType: "leafCards", leafScale: 1.55, leafDensity: 4, colorTrunk: "#64748b", colorLeafMain: "#3f6212", colorLeafTip: "#84cc16" },
+      maple: { name: "Maple (Arce)", engine: "sympodial", levels: 4, height: 4.5, radius: 0.38, taper: 0.70, angle: 44, decay: 0.76, noise: 0.28, gravity: 0.10, foliageType: "leafCards", leafScale: 1.40, leafDensity: 4, colorTrunk: "#432818", colorLeafMain: "#9e2a2b", colorLeafTip: "#e09f3e" },
+      willow: { name: "Willow (Sauce)", engine: "sympodial", levels: 4, height: 4.6, radius: 0.44, taper: 0.66, angle: 35, decay: 0.82, noise: 0.25, gravity: -0.48, foliageType: "hangingVines", leafScale: 1.15, leafDensity: 5, colorTrunk: "#5c4d3c", colorLeafMain: "#55a630", colorLeafTip: "#aacc00" },
+      gumTree: { name: "Gum Tree (Eucalipto)", engine: "sympodial", levels: 4, height: 6.6, radius: 0.40, taper: 0.72, angle: 36, decay: 0.76, noise: 0.35, gravity: 0.12, foliageType: "leafCards", leafScale: 1.30, leafDensity: 3, colorTrunk: "#94a3b8", colorLeafMain: "#0f766e", colorLeafTip: "#5eead4" }
+    }
+  },
+  {
+    category: "🌸 Ornamentales",
+    items: {
+      sakura: { name: "Sakura", engine: "sympodial", levels: 4, height: 3.8, radius: 0.36, taper: 0.70, angle: 48, decay: 0.78, noise: 0.42, gravity: 0.05, foliageType: "flowers", leafScale: 1.35, leafDensity: 4, colorTrunk: "#3d2c2e", colorLeafMain: "#ff758f", colorLeafTip: "#ffccd5" },
+      jacaranda: { name: "Jacaranda", engine: "sympodial", levels: 4, height: 5.0, radius: 0.40, taper: 0.72, angle: 46, decay: 0.80, noise: 0.32, gravity: 0.10, foliageType: "flowers", leafScale: 1.55, leafDensity: 4, colorTrunk: "#7a6a5a", colorLeafMain: "#8b5cf6", colorLeafTip: "#c4b5fd" },
+      magnolia: { name: "Magnolia", engine: "sympodial", levels: 3, height: 4.0, radius: 0.34, taper: 0.72, angle: 42, decay: 0.74, noise: 0.20, gravity: 0.14, foliageType: "flowers", leafScale: 1.45, leafDensity: 3, colorTrunk: "#4a3a2c", colorLeafMain: "#1e3a2e", colorLeafTip: "#fce7f3" },
+      wisteria: { name: "Wisteria", engine: "sympodial", levels: 3, height: 3.5, radius: 0.24, taper: 0.72, angle: 42, decay: 0.78, noise: 0.35, gravity: 0.08, foliageType: "hangingVines", leafScale: 1.20, leafDensity: 5, colorTrunk: "#5a4535", colorLeafMain: "#7c3aed", colorLeafTip: "#c4b5fd" }
+    }
+  },
+  {
+    category: "🌵 Suculentas & Palmeras",
+    items: {
+      palm: { name: "Coconut Palm", engine: "palm", levels: 4, height: 5.8, radius: 0.25, taper: 0.80, angle: 50, decay: 0.86, noise: 0.42, gravity: -0.25, foliageType: "fronds", leafScale: 1.55, leafDensity: 4, colorTrunk: "#6f4e37", colorLeafMain: "#2b9348", colorLeafTip: "#aacc00" },
+      datePalm: { name: "Date Palm", engine: "palm", levels: 4, height: 7.0, radius: 0.32, taper: 0.82, angle: 40, decay: 0.90, noise: 0.10, gravity: -0.10, foliageType: "fronds", leafScale: 1.60, leafDensity: 4, colorTrunk: "#8b7355", colorLeafMain: "#4d7c0f", colorLeafTip: "#a3c66c" },
+      cactus: { name: "Saguaro", engine: "cactus", levels: 3, height: 4.2, radius: 0.34, taper: 0.88, angle: 65, decay: 0.68, noise: 0.08, gravity: 0.45, foliageType: "none", leafScale: 0.80, leafDensity: 1, cactusRibs: 8, spineDensity: 1.0, armProbability: 0.65, colorTrunk: "#4d7c0f", colorLeafMain: "#84cc16", colorLeafTip: "#f43f5e" },
+      agave: { name: "Agave", engine: "rosette", levels: 3, height: 1.2, radius: 0.35, taper: 0.80, angle: 55, decay: 0.78, noise: 0.10, gravity: 0.05, foliageType: "succulentLeaves", leafScale: 1.20, leafDensity: 4, colorTrunk: "#4d7c0f", colorLeafMain: "#84cc16", colorLeafTip: "#fef08a" },
+      banana: { name: "Banana (Bananero)", engine: "palm", levels: 3, height: 3.2, radius: 0.20, taper: 0.88, angle: 40, decay: 0.86, noise: 0.10, gravity: 0.05, foliageType: "paddleLeaves", leafScale: 1.80, leafDensity: 4, colorTrunk: "#4d7c0f", colorLeafMain: "#22c55e", colorLeafTip: "#86efac" }
+    }
+  }
+];
+
+const FLAT_PRESETS = {};
+LIBRARY.forEach(g => Object.assign(FLAT_PRESETS, g.items));
+
+/* ═══════════════════════════════════════════════════════════
+   CALIDAD GRÁFICA (DIFERENCIAS EXTREMAS)
+═══════════════════════════════════════════════════════════ */
+const QUALITY_LEVELS = {
+  // BAJA: Sin luces, ramas cuadradas, casi sin hojas. Ideal para móviles muy lentos.
+  low:    { label: 'BAJA',   radialSegs: 4,  branchSteps: 1, leafMult: 0.2, spineMult: 0.3, material: 'basic',    wind: false, smooth: false },
+  // MEDIA: Lambert básico, ramas 6 lados, hojas moderadas.
+  medium: { label: 'MEDIA',  radialSegs: 6,  branchSteps: 2, leafMult: 0.8, spineMult: 0.8, material: 'lambert',  wind: true,  smooth: false },
+  // ALTA: Standard con sombras, ramas 8 lados.
+  high:   { label: 'ALTA',   radialSegs: 8,  branchSteps: 2, leafMult: 1.2, spineMult: 1.0, material: 'standard', wind: true,  smooth: false },
+  // ULTRA: Standard suavizado, ramas 14 lados, hojas 3x, subdivisiones extra.
+  ultra:  { label: 'ULTRA',  radialSegs: 14, branchSteps: 3, leafMult: 3.0, spineMult: 1.5, material: 'standard', wind: true,  smooth: true  }
+};
+let currentQuality = 'high';
+
+function createPRNG(seed) {
+  let s = seed % 2147483647;
+  if (s <= 0) s += 2147483646;
+  return () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; };
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ESCENA
+═══════════════════════════════════════════════════════════ */
+const container = document.getElementById('canvas-container');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#131b24');
+scene.fog = new THREE.FogExp2('#131b24', 0.02);
+
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 150);
+camera.position.set(11, 7.5, 13);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+container.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.target.set(0, 3.2, 0);
+
+scene.add(new THREE.HemisphereLight('#b5e2fa', '#2b2d42', 1.1));
+const dirLight = new THREE.DirectionalLight('#fff3b0', 2.5);
+dirLight.position.set(10, 18, 12);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.set(2048, 2048);
+dirLight.shadow.camera.left = -12; dirLight.shadow.camera.right = 12;
+dirLight.shadow.camera.top = 12; dirLight.shadow.camera.bottom = -12;
+dirLight.shadow.bias = -0.0005;
+scene.add(dirLight);
+const rimLight = new THREE.DirectionalLight('#4cc9f0', 0.8);
+rimLight.position.set(-10, 8, -10);
+scene.add(rimLight);
+
+const groundMesh = new THREE.Mesh(
+  new THREE.CylinderGeometry(8, 7.5, 0.6, 12),
+  new THREE.MeshStandardMaterial({ color: '#1e293b', flatShading: true, roughness: 0.9 })
+);
+groundMesh.position.y = -0.3;
+groundMesh.receiveShadow = true;
+scene.add(groundMesh);
+const gridHelper = new THREE.GridHelper(16, 16, '#334155', '#1e293b');
+gridHelper.position.y = 0.01;
+scene.add(gridHelper);
+
+let currentTreeMesh = null;
+let currentSeason = 'summer';
+const windUniform = { value: 0 };
+
+/* ═══════════════════════════════════════════════════════════
+   UTILIDADES
+═══════════════════════════════════════════════════════════ */
+function safeToNonIndexed(geo) {
+  if (!geo) return null;
+  if (geo.index) {
+    const nonIdx = geo.toNonIndexed();
+    geo.dispose();
+    return nonIdx;
+  }
+  return geo;
+}
+
+function prepareForMerge(geometries) {
+  if (!geometries || geometries.length === 0) return null;
+  const valid = geometries.filter(g => g && g.isBufferGeometry && g.attributes.position && g.attributes.position.count > 0);
+  if (valid.length === 0) return null;
+  valid.forEach(g => {
+    Object.keys(g.attributes).forEach(name => {
+      if (!['position', 'normal', 'color'].includes(name)) g.deleteAttribute(name);
+    });
+    if (!g.hasAttribute('normal')) { try { g.computeVertexNormals(); } catch(e) {} }
+    if (!g.hasAttribute('color')) {
+      const count = g.attributes.position.count;
+      g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(count * 3).fill(1), 3));
+    }
+  });
+  return valid;
+}
+
+function applyVertexColors(geometry, colorBottom, colorTop, rand, jitter = 0.06) {
+  const pos = geometry.attributes.position;
+  geometry.computeBoundingBox();
+  const minY = geometry.boundingBox.min.y;
+  const rangeY = Math.max(0.001, geometry.boundingBox.max.y - minY);
+  const colors = new Float32Array(pos.count * 3);
+  const cBot = new THREE.Color(colorBottom);
+  const cTop = new THREE.Color(colorTop);
+  const temp = new THREE.Color();
+  for (let i = 0; i < pos.count; i++) {
+    const t = THREE.MathUtils.clamp((pos.getY(i) - minY) / rangeY, 0, 1);
+    temp.copy(cBot).lerp(cTop, t);
+    temp.offsetHSL(0, 0, (rand() - 0.5) * jitter);
+    colors[i * 3] = temp.r; colors[i * 3 + 1] = temp.g; colors[i * 3 + 2] = temp.b;
+  }
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+}
+
+function createBranchSegment(rBot, rTop, len, segs, colorHex, rand) {
+  const geo = new THREE.CylinderGeometry(rTop, rBot, len, segs, 1, false);
+  geo.translate(0, len / 2, 0);
+  const nonIdx = safeToNonIndexed(geo);
+  applyVertexColors(nonIdx, new THREE.Color(colorHex).multiplyScalar(0.78), colorHex, rand, 0.04);
+  return nonIdx;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   FOLLAJES MEJORADOS
+═══════════════════════════════════════════════════════════ */
+function createLeafCards(scale, colorMain, colorTip, season, rand, densityMult) {
+  const parts = [];
+  // Generamos clusters de hojas pequeñas en lugar de un solo quad
+  const leafCount = Math.round((12 + rand() * 8) * densityMult);
+  for (let i = 0; i < leafCount; i++) {
+    const w = scale * 0.12, l = scale * 0.22;
+    const verts = new Float32Array([
+      0, 0, 0,
+      w, l * 0.4, 0.05,
+      0, l, 0.1,
+      -w, l * 0.4, 0.05
+    ]);
+    const leaf = new THREE.BufferGeometry();
+    leaf.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+    leaf.setIndex([0,1,2, 0,2,3]);
+    const nonIdx = safeToNonIndexed(leaf);
+    
+    // Orientación aleatoria y posición en esfera
+    const yaw = rand() * Math.PI * 2;
+    const pitch = -0.6 + rand() * 1.2;
+    const roll = (rand() - 0.5) * 0.8;
+    const theta = rand() * Math.PI * 2;
+    const phi = Math.acos(2 * rand() - 1);
+    const r = scale * 0.4;
+    
+    const m = new THREE.Matrix4().makeRotationY(yaw);
+    m.multiply(new THREE.Matrix4().makeRotationX(pitch));
+    m.multiply(new THREE.Matrix4().makeRotationZ(roll));
+    m.setPosition(r * Math.sin(phi) * Math.cos(theta), r * Math.cos(phi) * 0.7, r * Math.sin(phi) * Math.sin(theta));
+    nonIdx.applyMatrix4(m);
+
+    let c1 = new THREE.Color(colorMain), c2 = new THREE.Color(colorTip);
+    if (season === 'autumn') { c1.set('#bc4749'); c2.set('#f59e0b').lerp(new THREE.Color('#fde047'), rand()); }
+    if (season === 'winter') { c1.set('#cbd5e1'); c2.set('#ffffff'); }
+    applyVertexColors(nonIdx, c1, c2, rand, 0.08);
+    parts.push(nonIdx);
+  }
+  const merged = mergeGeometries(prepareForMerge(parts), false);
+  parts.forEach(p => p.dispose());
+  return merged;
+}
+
+function createNeedleBrush(scale, colorMain, colorTip, season, rand, needleLen, needleDensity) {
+  const parts = [];
+  const count = needleDensity + Math.floor(rand() * 4);
+  for (let i = 0; i < count; i++) {
+    const nLen = scale * needleLen * (0.6 + rand() * 0.6);
+    const n = new THREE.ConeGeometry(scale * 0.03, nLen, 3);
+    n.translate(0, nLen / 2, 0);
+    const nonIdx = safeToNonIndexed(n);
+    const m = new THREE.Matrix4().makeRotationY(rand() * Math.PI * 2);
+    m.multiply(new THREE.Matrix4().makeRotationX(0.5 + rand() * 1.0));
+    nonIdx.applyMatrix4(m);
+    let c1 = new THREE.Color(colorMain), c2 = new THREE.Color(colorTip);
+    if (season === 'autumn') { c1.set('#78350f'); c2.set('#a16207'); }
+    if (season === 'winter') { c1.set('#94a3b8'); c2.set('#e2e8f0'); }
+    applyVertexColors(nonIdx, c1, c2, rand, 0.05);
+    parts.push(nonIdx);
+  }
+  const merged = mergeGeometries(prepareForMerge(parts), false);
+  parts.forEach(p => p.dispose());
+  return merged;
+}
+
+function createHangingVines(scale, colorMain, colorTip, season, rand, densityMult) {
+  const parts = [];
+  const strandCount = Math.round((4 + rand() * 4) * densityMult);
+  for (let s = 0; s < strandCount; s++) {
+    const strandLen = scale * (1.2 + rand() * 1.5);
+    const leafCount = 8 + Math.floor(rand() * 8);
+    const strandAngle = (s / strandCount) * Math.PI * 2 + rand() * 0.6;
+    const strandR = scale * (0.2 + rand() * 0.6);
+    const baseX = Math.cos(strandAngle) * strandR, baseZ = Math.sin(strandAngle) * strandR;
+    for (let i = 0; i < leafCount; i++) {
+      const t = i / leafCount;
+      const w = scale * 0.08, l = scale * 0.16;
+      const verts = new Float32Array([0,0,0, w,l*0.5,0, 0,l,0.02, -w,l*0.5,0]);
+      const leaf = new THREE.BufferGeometry();
+      leaf.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+      leaf.setIndex([0,1,2, 0,2,3]);
+      const nonIdx = safeToNonIndexed(leaf);
+      const m = new THREE.Matrix4().makeRotationY(rand() * Math.PI * 2);
+      const sway = Math.sin(t * Math.PI * 2) * scale * 0.1;
+      m.setPosition(baseX + sway, -t * strandLen, baseZ + sway * 0.5);
+      nonIdx.applyMatrix4(m);
+      let c1 = new THREE.Color(colorMain), c2 = new THREE.Color(colorTip);
+      if (season === 'autumn') { c1.set('#ca8a04'); c2.set('#fde047'); }
+      if (season === 'winter') { c1.set('#cbd5e1'); c2.set('#ffffff'); }
+      applyVertexColors(nonIdx, c1, c2, rand, 0.07);
+      parts.push(nonIdx);
+    }
+  }
+  const merged = mergeGeometries(prepareForMerge(parts), false);
+  parts.forEach(p => p.dispose());
+  return merged;
+}
+
+function createPinnateFrond(scale, colorMain, colorTip, season, rand) {
+  const parts = [];
+  const rachisLen = scale * 1.8;
+  const rachisGeo = new THREE.CylinderGeometry(scale * 0.02, scale * 0.045, rachisLen, 3);
+  rachisGeo.translate(0, rachisLen / 2, 0);
+  const rachisNonIdx = safeToNonIndexed(rachisGeo);
+  let c1 = new THREE.Color(colorMain), c2 = new THREE.Color(colorTip);
+  applyVertexColors(rachisNonIdx, c1, c2, rand, 0.03);
+  parts.push(rachisNonIdx);
+  
+  const leafletCount = 14 + Math.floor(rand() * 8);
+  for (let i = 0; i < leafletCount; i++) {
+    const t = i / leafletCount;
+    const side = i % 2 === 0 ? 1 : -1;
+    const leafletLen = scale * (0.6 - t * 0.3) * (0.85 + rand() * 0.4);
+    const leafletW = scale * 0.08;
+    const verts = new Float32Array([0,0,0, leafletW,leafletLen*0.5,0, 0,leafletLen,0.05, -leafletW,leafletLen*0.5,0]);
+    const lg = new THREE.BufferGeometry();
+    lg.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+    lg.setIndex([0,1,2, 0,2,3]);
+    const nonIdx = safeToNonIndexed(lg);
+    const m = new THREE.Matrix4().makeRotationY(side > 0 ? Math.PI / 2 : -Math.PI / 2);
+    m.multiply(new THREE.Matrix4().makeRotationZ(-0.6));
+    m.setPosition(0, t * rachisLen * 0.85, 0);
+    const bendM = new THREE.Matrix4().makeRotationX(t * t * 0.8);
+    bendM.multiply(m);
+    nonIdx.applyMatrix4(bendM);
+    applyVertexColors(nonIdx, c1, c2, rand, 0.06);
+    parts.push(nonIdx);
+  }
+  const merged = mergeGeometries(prepareForMerge(parts), false);
+  parts.forEach(p => p.dispose());
+  return merged;
+}
+
+function createArchedPalmCrown(scale, colorMain, colorTip, season, rand, densityMult) {
+  const parts = [];
+  const frondCount = Math.round((8 + rand() * 5) * densityMult);
+  for (let i = 0; i < frondCount; i++) {
+    const yaw = (i / frondCount) * Math.PI * 2 + rand() * 0.3;
+    const pitch = -0.8 + rand() * 1.2;
+    const frond = createPinnateFrond(scale * (0.9 + rand() * 0.3), colorMain, colorTip, season, rand);
+    const m = new THREE.Matrix4().makeRotationY(yaw);
+    m.multiply(new THREE.Matrix4().makeRotationX(pitch + 0.85));
+    frond.applyMatrix4(m);
+    parts.push(frond);
+  }
+  const merged = mergeGeometries(prepareForMerge(parts), false);
+  parts.forEach(p => p.dispose());
+  return merged;
+}
+
+function createFoliageCluster(type, scale, colorMain, colorTip, season, rand, opts = {}) {
+  if (type === 'none') return null;
+  const densityMult = opts.densityMult || 1;
+  
+  if (type === 'needles') return createNeedleBrush(scale, colorMain, colorTip, season, rand, opts.needleLength || 1, opts.needleDensity || 7);
+  if (type === 'leafCards') return createLeafCards(scale, colorMain, colorTip, season, rand, densityMult);
+  if (type === 'hangingVines') return createHangingVines(scale, colorMain, colorTip, season, rand, densityMult);
+  if (type === 'fronds') return createArchedPalmCrown(scale, colorMain, colorTip, season, rand, densityMult);
+  if (type === 'paddleLeaves') {
+    // Bananero simplificado
+    const geo = new THREE.SphereGeometry(scale * 0.6, 6, 4);
+    geo.scale(1, 0.15, 1.5);
+    const nonIdx = safeToNonIndexed(geo);
+    applyVertexColors(nonIdx, colorMain, colorTip, rand, 0.1);
+    return nonIdx;
+  }
+
+  // Fallback icosahedron/cone/flowers
+  let geo = type === 'cone' ? new THREE.ConeGeometry(scale, scale * 1.5, 7) : 
+            type === 'dodecahedron' ? new THREE.DodecahedronGeometry(scale * 0.8, 0) : 
+            new THREE.IcosahedronGeometry(scale * 0.8, currentQuality === 'ultra' ? 1 : 0);
+            
+  const nonIdx = safeToNonIndexed(geo);
+  applyVertexColors(nonIdx, colorMain, colorTip, rand, 0.1);
+  return nonIdx;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   GENERADOR PRINCIPAL & RAÍCES MEJORADAS
+═══════════════════════════════════════════════════════════ */
+function generateTree() {
+  const Q = QUALITY_LEVELS[currentQuality];
+  const p = {
+    seed: parseInt(document.getElementById('seed-input').value) || 1,
+    engine: document.getElementById('engine-select').value,
+    levels: parseInt(document.getElementById('levels').value),
+    height: parseFloat(document.getElementById('height').value),
+    radius: parseFloat(document.getElementById('radius').value),
+    taper: parseFloat(document.getElementById('taper').value),
+    angle: THREE.MathUtils.degToRad(parseFloat(document.getElementById('angle').value)),
+    decay: parseFloat(document.getElementById('decay').value),
+    noise: parseFloat(document.getElementById('noise').value),
+    gravity: parseFloat(document.getElementById('gravity').value),
+    foliageType: document.getElementById('foliageType').value,
+    leafScale: parseFloat(document.getElementById('leafScale').value),
+    leafDensity: parseInt(document.getElementById('leafDensity').value),
+    needleLength: parseFloat(document.getElementById('needleLength').value),
+    needleDensity: parseInt(document.getElementById('needleDensity').value),
+    cactusRibs: parseInt(document.getElementById('cactusRibs').value),
+    spineDensity: parseFloat(document.getElementById('spineDensity').value),
+    armProbability: parseFloat(document.getElementById('armProbability').value),
+    colorTrunk: document.getElementById('colorTrunk').value,
+    colorLeafMain: document.getElementById('colorLeafMain').value,
+    colorLeafTip: document.getElementById('colorLeafTip').value,
+    season: currentSeason,
+    showRoots: document.getElementById('root-toggle').checked
+  };
+
+  const rand = createPRNG(p.seed);
+  const geometries = [];
+  const GOLDEN_ANGLE = 2.39996323;
+  const foliageOpts = { densityMult: Q.leafMult, needleLength: p.needleLength, needleDensity: p.needleDensity };
+
+  /* ── NUEVAS RAÍCES (Curvas y Cónicas) ── */
+  if (p.showRoots && p.engine !== 'palm' && p.engine !== 'rosette' && p.engine !== 'grass' && p.height > 1.5) {
+    const rootCount = 5 + Math.floor(rand() * 3);
+    for (let r = 0; r < rootCount; r++) {
+      let rootMat = new THREE.Matrix4();
+      // Ángulo alrededor del tronco
+      rootMat.multiply(new THREE.Matrix4().makeRotationY((r / rootCount) * Math.PI * 2 + rand() * 0.5));
+      // Inclinación inicial hacia afuera
+      rootMat.multiply(new THREE.Matrix4().makeRotationZ(1.0 + rand() * 0.4)); 
+      
+      let rRad = p.radius * 0.5; // Grosor inicial
+      let rLen = p.radius * (1.5 + rand() * 0.5); // Longitud inicial
+      
+      // Generamos 3 segmentos por raíz para hacer la curva
+      for (let s = 0; s < 3; s++) {
+        const nextRad = rRad * 0.4;
+        const seg = createBranchSegment(rRad, nextRad, rLen, Math.max(4, Q.radialSegs - 2), p.colorTrunk, rand);
+        seg.applyMatrix4(rootMat);
+        geometries.push(seg);
+        
+        rootMat.multiply(new THREE.Matrix4().makeTranslation(0, rLen, 0));
+        // La raíz se curva hacia abajo
+        rootMat.multiply(new THREE.Matrix4().makeRotationZ(-0.6 - rand() * 0.2)); 
+        
+        rRad = nextRad;
+        rLen *= 0.75; // Se acorta
+      }
+    }
+  }
+
+  /* ── MOTORES (Bambú, Cactus, etc.) ── */
+  if (p.engine === 'bamboo') {
+    const stalks = 5 + p.leafDensity;
+    for (let st = 0; st < stalks; st++) {
+      const dist = (st === 0 ? 0 : 0.25 + rand() * 0.85);
+      const ang = (st / stalks) * Math.PI * 2 + rand() * 0.5;
+      let mat = new THREE.Matrix4().makeTranslation(Math.cos(ang) * dist, 0, Math.sin(ang) * dist);
+      mat.multiply(new THREE.Matrix4().makeRotationZ((rand() - 0.5) * 0.12));
+      const stalkH = p.height * (0.65 + rand() * 0.45);
+      const segs = p.levels + 2, segLen = stalkH / segs;
+      let rad = p.radius * (0.8 + rand() * 0.3);
+      for (let i = 0; i < segs; i++) {
+        const nextRad = rad * p.taper;
+        const segGeo = createBranchSegment(rad * 1.15, nextRad, segLen, Q.radialSegs, p.colorTrunk, rand);
+        segGeo.applyMatrix4(mat);
+        geometries.push(segGeo);
+        mat.multiply(new THREE.Matrix4().makeTranslation(0, segLen, 0));
+        mat.multiply(new THREE.Matrix4().makeRotationZ((rand() - 0.5) * p.noise * 0.35));
+        if (i >= 1) {
+          const leaves = createFoliageCluster('bambooLeaves', p.leafScale * 0.85, p.colorLeafMain, p.colorLeafTip, p.season, rand, foliageOpts);
+          if (leaves) {
+            const lMat = mat.clone().multiply(new THREE.Matrix4().makeRotationY(rand() * Math.PI * 2));
+            leaves.applyMatrix4(lMat);
+            geometries.push(leaves);
+          }
+        }
+        rad = nextRad;
+      }
+    }
+  }
+  else if (p.engine === 'rosette' || p.engine === 'grass') {
+    const layers = 3;
+    const perLayer = 6 + p.leafDensity * 2;
+    for (let layer = 0; layer < layers; layer++) {
+      const lt = layer / (layers - 1);
+      const startY = p.height * 0.4 * (1 + lt * 0.5);
+      const outAngle = 1.2 - lt * 0.6;
+      for (let i = 0; i < perLayer; i++) {
+        const yaw = (i / perLayer) * Math.PI * 2 + layer * 0.4 + rand() * 0.2;
+        const leafLen = p.height * (0.5 + rand() * 0.3) * (1 - lt * 0.35);
+        const leafW = p.radius * 0.5;
+        const leafGeo = new THREE.ConeGeometry(leafW * 0.6, leafLen, 4);
+        leafGeo.scale(1.2, 1, 0.4);
+        leafGeo.translate(0, leafLen / 2, 0);
+        const nonIdx = safeToNonIndexed(leafGeo);
+        applyVertexColors(nonIdx, p.colorLeafMain, p.colorLeafTip, rand, 0.07);
+        const m = new THREE.Matrix4().makeRotationY(yaw);
+        m.multiply(new THREE.Matrix4().makeRotationX(outAngle));
+        m.setPosition(0, startY, 0);
+        nonIdx.applyMatrix4(m);
+        geometries.push(nonIdx);
+      }
+    }
+  }
+  else if (p.engine === 'cactus') {
+    const mainH = p.height, segs = 5, segLen = mainH / segs, ribs = p.cactusRibs, ribDepth = 0.13;
+    let mat = new THREE.Matrix4(), rad = p.radius;
+    for (let i = 0; i < segs; i++) {
+      const nextRad = i === segs - 1 ? rad * 0.6 : rad * 0.97;
+      const segGeo = createRibbedCactusSegment(rad, segLen, ribs, ribDepth, p.colorTrunk, rand);
+      segGeo.applyMatrix4(mat);
+      geometries.push(segGeo);
+      const spines = createCactusSpines(rad, segLen, ribs, ribDepth, '#fef3c7', rand, p.spineDensity * Q.spineMult);
+      if (spines) { spines.applyMatrix4(mat); geometries.push(spines); }
+      mat.multiply(new THREE.Matrix4().makeTranslation(0, segLen, 0));
+      mat.multiply(new THREE.Matrix4().makeRotationZ((rand() - 0.5) * p.noise * 0.2));
+      if (i >= 1 && i <= 3 && rand() < p.armProbability) {
+        let armMat = mat.clone();
+        armMat.multiply(new THREE.Matrix4().makeRotationY(i * GOLDEN_ANGLE + rand()));
+        armMat.multiply(new THREE.Matrix4().makeRotationZ(p.angle));
+        const armRad = rad * 0.72, armSegLen = mainH * 0.22;
+        const armOut = createRibbedCactusSegment(armRad, armSegLen, Math.max(6, ribs - 2), ribDepth, p.colorTrunk, rand);
+        armOut.applyMatrix4(armMat);
+        geometries.push(armOut);
+        armMat.multiply(new THREE.Matrix4().makeTranslation(0, armSegLen * 0.95, 0));
+        armMat.multiply(new THREE.Matrix4().makeRotationZ(-p.angle * 0.95));
+        const armUpLen = mainH * (0.28 + rand() * 0.18), armRad2 = armRad * 0.92;
+        const armUp = createRibbedCactusSegment(armRad2, armUpLen, Math.max(6, ribs - 2), ribDepth, p.colorTrunk, rand);
+        armUp.applyMatrix4(armMat);
+        geometries.push(armUp);
+      }
+      rad = nextRad;
+    }
+  }
+  else {
+    /* ── ARBÓREOS (sympodial, monopodial, palm) ── */
+    function growBranch(matrix, level, length, radius, radialSegs, isMainAxis = false) {
+      const stepLen = length / Q.branchSteps;
+      let currMat = matrix.clone(), currRad = radius;
+      for (let s = 0; s < Q.branchSteps; s++) {
+        const rStart = p.engine === 'palm' ? currRad * 1.12 : currRad;
+        const nextRad = currRad * Math.sqrt(p.taper);
+        const segGeo = createBranchSegment(rStart, nextRad, stepLen, radialSegs, p.colorTrunk, rand);
+        segGeo.applyMatrix4(currMat);
+        geometries.push(segGeo);
+        currMat.multiply(new THREE.Matrix4().makeTranslation(0, stepLen, 0));
+        const noiseFactor = isMainAxis ? p.noise * 0.35 : p.noise * 0.7;
+        currMat.multiply(new THREE.Matrix4().makeRotationFromEuler(
+          new THREE.Euler((rand() - 0.5) * noiseFactor, 0, (rand() - 0.5) * noiseFactor)
+        ));
+        if (!isMainAxis && level > 0 && Math.abs(p.gravity) > 0.01 && p.engine !== 'palm') {
+          currMat.multiply(new THREE.Matrix4().makeRotationX(-p.gravity * 0.18));
+        }
+        currRad = nextRad;
+      }
+
+      const isTip = level >= p.levels - 1;
+      if (p.engine === 'monopodial') {
+        if (isMainAxis && level >= 1) {
+          const heightRatio = 1 - (level / (p.levels + 0.5));
+          const tierScale = p.leafScale * (0.65 + heightRatio * 1.15);
+          const leafGeo = createFoliageCluster(p.foliageType, tierScale, p.colorLeafMain, p.colorLeafTip, p.season, rand, foliageOpts);
+          if (leafGeo) {
+            leafGeo.applyMatrix4(currMat.clone().multiply(new THREE.Matrix4().makeRotationY(rand() * Math.PI * 2)));
+            geometries.push(leafGeo);
+          }
+        }
+      } else if (p.engine === 'sympodial') {
+        const addMid = (level >= p.levels - 2 && p.leafDensity >= 4);
+        if (isTip || addMid) {
+          const count = isTip ? Math.min(4, Math.ceil(p.leafDensity / 2)) : 1;
+          for (let c = 0; c < count; c++) {
+            const sc = p.leafScale * (0.75 + rand() * 0.5) * (p.season === 'winter' ? 0.55 : 1.0);
+            const leafGeo = createFoliageCluster(p.foliageType, sc, p.colorLeafMain, p.colorLeafTip, p.season, rand, foliageOpts);
+            if (leafGeo) {
+              const lMat = currMat.clone();
+              if (c > 0) {
+                lMat.multiply(new THREE.Matrix4().makeTranslation(
+                  (rand() - 0.5) * sc * 0.9, (rand() - 0.3) * sc * 0.5, (rand() - 0.5) * sc * 0.9
+                ));
+              }
+              lMat.multiply(new THREE.Matrix4().makeRotationY(rand() * Math.PI * 2));
+              leafGeo.applyMatrix4(lMat);
+              geometries.push(leafGeo);
+            }
+          }
+        }
+      }
+      
+      if (p.engine === 'palm' && isTip) {
+        const crownGeo = createFoliageCluster(p.foliageType, p.leafScale * 1.15, p.colorLeafMain, p.colorLeafTip, p.season, rand, foliageOpts);
+        if (crownGeo) { crownGeo.applyMatrix4(currMat); geometries.push(crownGeo); }
+        return;
+      }
+      if (isTip) return;
+
+      const nextLen = length * p.decay;
+      const nextRad = currRad * 0.85;
+      const nextSegs = Math.max(4, radialSegs - 1);
+      if (p.engine === 'palm') {
+        const palmMat = currMat.clone();
+        palmMat.multiply(new THREE.Matrix4().makeRotationZ((rand() - 0.35) * p.noise * 0.45));
+        growBranch(palmMat, level + 1, nextLen, nextRad, radialSegs, true);
+      } else if (p.engine === 'monopodial') {
+        const centralMat = currMat.clone();
+        centralMat.multiply(new THREE.Matrix4().makeRotationY(GOLDEN_ANGLE));
+        growBranch(centralMat, level + 1, length * 0.82, nextRad * 0.88, nextSegs, true);
+        if (isMainAxis) {
+          const whorls = 3, spin = rand() * Math.PI * 2;
+          for (let i = 0; i < whorls; i++) {
+            const cMat = currMat.clone();
+            cMat.multiply(new THREE.Matrix4().makeRotationY(spin + (i / whorls) * Math.PI * 2));
+            cMat.multiply(new THREE.Matrix4().makeRotationZ(p.angle));
+            growBranch(cMat, level + 1, nextLen * 0.55, nextRad * 0.55, 4, false);
+          }
+        }
+      } else {
+        const branches = level === 0 ? 3 : (rand() > 0.35 ? 2 : 3);
+        const rollStart = rand() * Math.PI * 2;
+        for (let i = 0; i < branches; i++) {
+          const cMat = currMat.clone();
+          cMat.multiply(new THREE.Matrix4().makeRotationY(rollStart + i * GOLDEN_ANGLE));
+          cMat.multiply(new THREE.Matrix4().makeRotationZ(p.angle * (0.85 + rand() * 0.3)));
+          growBranch(cMat, level + 1, nextLen * (0.9 + rand() * 0.2), nextRad, nextSegs, false);
+        }
+      }
+    }
+    growBranch(new THREE.Matrix4(), 0, p.height * 0.45, p.radius, Q.radialSegs, true);
+  }
+
+  /* ── MERGE & MATERIAL ── */
+  const prepared = prepareForMerge(geometries);
+  let mergedGeo = null;
+  if (prepared && prepared.length > 0) {
+    try { mergedGeo = mergeGeometries(prepared, false); } catch (err) { console.error(err); }
+  }
+  if (!mergedGeo) {
+    mergedGeo = new THREE.CylinderGeometry(p.radius, p.radius * 0.5, p.height, 8, 1);
+    const count = mergedGeo.attributes.position.count;
+    mergedGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(count * 3).fill(0.5), 3));
+  }
+  geometries.forEach(g => { try { g.dispose(); } catch(e) {} });
+
+  if (currentTreeMesh) {
+    scene.remove(currentTreeMesh);
+    currentTreeMesh.geometry.dispose();
+    currentTreeMesh.material.dispose();
+  }
+
+  const doubleSideFoliage = ['leafCards','needles','hangingVines','fronds','paddleLeaves','bambooLeaves','grassBlades','succulentLeaves','flowers'];
+  const needsDoubleSide = doubleSideFoliage.includes(p.foliageType);
+  
+  let mat;
+  if (Q.material === 'basic') {
+    // BAJA: Sin luces, renderizado plano
+    mat = new THREE.MeshBasicMaterial({ vertexColors: true, side: needsDoubleSide ? THREE.DoubleSide : THREE.FrontSide });
+  } else if (Q.material === 'lambert') {
+    // MEDIA: Iluminación básica
+    mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: needsDoubleSide ? THREE.DoubleSide : THREE.FrontSide });
+  } else {
+    // ALTA/ULTRA: PBR Standard, flatShading dependerá de la calidad
+    mat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      flatShading: !Q.smooth, // Ultra usa smooth shading
+      roughness: 0.75, metalness: 0.1,
+      side: needsDoubleSide ? THREE.DoubleSide : THREE.FrontSide
+    });
+  }
+
+  // Shader de viento
+  if (Q.wind) {
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uTime = windUniform;
+      shader.vertexShader = 'uniform float uTime;\n' + shader.vertexShader;
+      shader.vertexShader = shader.vertexShader.replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+         float swayFactor = max(0.0, position.y - 1.0) * 0.04;
+         float sway = sin(uTime * 1.8 + position.y * 0.8 + position.x * 0.5 + position.z) * swayFactor;
+         transformed.x += sway;
+         transformed.z += sway * 0.5;`
+      );
+    };
+  }
+
+  currentTreeMesh = new THREE.Mesh(mergedGeo, mat);
+  currentTreeMesh.castShadow = Q.material !== 'basic';
+  currentTreeMesh.receiveShadow = Q.material !== 'basic';
+  scene.add(currentTreeMesh);
+
+  document.getElementById('stat-tris').textContent = Math.round(mergedGeo.attributes.position.count / 3).toLocaleString();
+  document.getElementById('stat-quality').textContent = Q.label;
+  document.getElementById('quality-tag').textContent = Q.label.charAt(0) + Q.label.slice(1).toLowerCase();
+}
+
+// Helpers para el Cactus (ya existentes)
+function createRibbedCactusSegment(radius, height, ribs, ribDepth, colorHex, rand) {
+  const segs = Math.max(6, Math.round(ribs * 2));
+  const geo = new THREE.CylinderGeometry(radius, radius, height, segs, 1, false);
+  const pos = geo.attributes.position, v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    const angle = Math.atan2(v.z, v.x);
+    const sc = 1 + Math.cos(angle * ribs) * ribDepth;
+    pos.setX(i, v.x * sc); pos.setZ(i, v.z * sc);
+  }
+  geo.computeVertexNormals();
+  geo.translate(0, height / 2, 0);
+  const nonIdx = safeToNonIndexed(geo);
+  applyVertexColors(nonIdx, new THREE.Color(colorHex).multiplyScalar(0.72), colorHex, rand, 0.05);
+  return nonIdx;
+}
+function createCactusSpines(radius, height, ribs, ribDepth, colorSpine, rand, densityMult) {
+  if (densityMult <= 0) return null;
+  const parts = [];
+  const rows = Math.max(3, Math.floor(height * 3 * densityMult));
+  const ribScale = 1 + ribDepth;
+  for (let r = 0; r < ribs; r++) {
+    const angle = (r / ribs) * Math.PI * 2;
+    for (let row = 0; row < rows; row++) {
+      if (rand() > 0.85 * densityMult) continue;
+      const y = (row + 0.5) * (height / rows);
+      for (let s = 0; s < 2 + Math.floor(rand() * 3); s++) {
+        const sp = new THREE.ConeGeometry(radius * 0.018, radius * 0.22, 3);
+        sp.translate(0, radius * 0.11, 0);
+        const nonIdx = safeToNonIndexed(sp);
+        applyVertexColors(nonIdx, '#f5f5dc', '#fef3c7', rand, 0.05);
+        const m = new THREE.Matrix4().makeTranslation(Math.cos(angle) * radius * ribScale, y, Math.sin(angle) * radius * ribScale);
+        m.multiply(new THREE.Matrix4().makeRotationY(angle + (rand() - 0.5) * 0.7));
+        m.multiply(new THREE.Matrix4().makeRotationZ(-Math.PI / 2 + (rand() - 0.5) * 0.7));
+        nonIdx.applyMatrix4(m);
+        parts.push(nonIdx);
+      }
+    }
+  }
+  const merged = mergeGeometries(prepareForMerge(parts), false);
+  parts.forEach(p => p.dispose());
+  return merged;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   UI
+═══════════════════════════════════════════════════════════ */
+const presetSelect = document.getElementById('preset-select');
+LIBRARY.forEach(group => {
+  const optgroup = document.createElement('optgroup');
+  optgroup.label = group.category;
+  Object.entries(group.items).forEach(([k, v]) => {
+    const opt = document.createElement('option');
+    opt.value = k; opt.textContent = v.name;
+    optgroup.appendChild(opt);
+  });
+  presetSelect.appendChild(optgroup);
+});
+
+function updateLabels() {
+  ['levels','height','radius','taper','decay','noise','gravity','leafScale','leafDensity',
+   'needleLength','needleDensity','cactusRibs','spineDensity','armProbability'].forEach(id => {
+    const el = document.getElementById(`val-${id}`);
+    if (el) el.textContent = document.getElementById(id).value;
+  });
+  document.getElementById('val-angle').textContent = document.getElementById('angle').value + '°';
+}
+
+function updateConditionalUI() {
+  const engine = document.getElementById('engine-select').value;
+  const foliage = document.getElementById('foliageType').value;
+  document.getElementById('conifer-section').classList.toggle('visible', foliage === 'needles');
+  document.getElementById('cactus-section').classList.toggle('visible', engine === 'cactus');
+}
+
+const FOLIAGE_LABELS = {
+  needles: 'Agujas', leafCards: 'Hojas', hangingVines: 'Colgantes',
+  fronds: 'Frondas', fernFronds: 'Helecho', paddleLeaves: 'Hojas Anchas',
+  bambooLeaves: 'Bambú', grassBlades: 'Briznas', berryClusters: 'Bayas',
+  succulentLeaves: 'Suculentas', flowers: 'Flores',
+  icosahedron: 'Clusters', cone: 'Conos', dodecahedron: 'Poliedros', none: 'Sin hojas'
+};
+function updatePresetInfo(key) {
+  const p = FLAT_PRESETS[key];
+  if (!p) return;
+  document.getElementById('preset-info').innerHTML = `
+    <div><b>${p.name}</b></div>
+    <div>Follaje: <b>${FOLIAGE_LABELS[p.foliageType] || p.foliageType}</b> · Motor: <b>${p.engine}</b></div>
+    <div style="margin-top:4px">
+      <span class="swatch" style="background:${p.colorTrunk}"></span>Tronco
+      <span class="swatch" style="background:${p.colorLeafMain};margin-left:6px"></span>Copa
+      <span class="swatch" style="background:${p.colorLeafTip};margin-left:6px"></span>Luz
+    </div>`;
+}
+
+function loadPreset(key) {
+  const p = FLAT_PRESETS[key];
+  if (!p) return;
+  
+  // FIX: Sincronizar el desplegable visualmente
+  presetSelect.value = key;
+  
+  document.getElementById('engine-select').value = p.engine;
+  ['levels','height','radius','taper','angle','decay','noise','gravity','foliageType','leafScale','leafDensity','colorTrunk','colorLeafMain','colorLeafTip'].forEach(id => {
+    if (p[id] !== undefined) document.getElementById(id).value = p[id];
+  });
+  if (p.needleLength !== undefined) document.getElementById('needleLength').value = p.needleLength;
+  if (p.needleDensity !== undefined) document.getElementById('needleDensity').value = p.needleDensity;
+  if (p.cactusRibs !== undefined) document.getElementById('cactusRibs').value = p.cactusRibs;
+  if (p.spineDensity !== undefined) document.getElementById('spineDensity').value = p.spineDensity;
+  if (p.armProbability !== undefined) document.getElementById('armProbability').value = p.armProbability;
+  
+  updateLabels();
+  updateConditionalUI();
+  updatePresetInfo(key);
+  generateTree();
+}
+
+presetSelect.addEventListener('change', e => loadPreset(e.target.value));
+document.querySelectorAll('#ui-panel input, #ui-panel select').forEach(el => {
+  if (el.id !== 'preset-select' && el.id !== 'wind-toggle') {
+    el.addEventListener('input', () => { updateLabels(); updateConditionalUI(); generateTree(); });
+  }
+});
+document.getElementById('btn-random-seed').addEventListener('click', () => {
+  document.getElementById('seed-input').value = Math.floor(Math.random() * 90000) + 1000;
+  generateTree();
+});
+document.querySelectorAll('.season-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.season-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentSeason = btn.dataset.season;
+    generateTree();
+  });
+});
+document.querySelectorAll('.quality-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.quality-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentQuality = btn.dataset.quality;
+    generateTree();
+  });
+});
+document.getElementById('btn-export').addEventListener('click', () => {
+  if (!currentTreeMesh) return;
+  new GLTFExporter().parse(currentTreeMesh, gltf => {
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob([gltf], { type: 'application/octet-stream' }));
+    link.download = `tree_${presetSelect.value}_${document.getElementById('seed-input').value}.glb`;
+    link.click();
+  }, err => console.error(err), { binary: true });
+});
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+window.addEventListener('keydown', e => {
+  if (e.key === 'r' || e.key === 'R') document.getElementById('btn-random-seed').click();
+});
+
+loadPreset('oak');
+const clock = new THREE.Clock();
+(function animate() {
+  requestAnimationFrame(animate);
+  if (document.getElementById('wind-toggle').checked) windUniform.value = clock.getElapsedTime();
+  controls.update();
+  renderer.render(scene, camera);
+})();
+</script>
+</body>
+</html>
