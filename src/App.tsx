@@ -81,7 +81,17 @@ import {
   SYNTHESIZED_TIP_META,
   SYNTHESIZED_BASAL_META,
 } from './data/speciesCatalog';
-import { TreeViewport, TreeViewportHandle, CameraPreset } from './components/TreeViewport';
+import {
+  TreeViewport,
+  TreeViewportHandle,
+  CameraPreset,
+  ViewportHitPart,
+} from './components/TreeViewport';
+import { PartVisualThumb, PartThumbKind } from './components/BotanicalVisualThumb';
+import {
+  getCachedReal3DThumb,
+  renderReal3DThumbnail,
+} from './utils/real3DThumbRenderer';
 import {
   SavedBotanicalModel,
   loadSavedModelsFromStorage,
@@ -99,6 +109,7 @@ import {
   loadSavedCustomElements,
   saveCustomElementToApp,
   loadSavedCustomSpecies,
+  deleteCustomSpeciesFromApp,
   AiProviderId,
   AiProviderConfig,
   AI_PROVIDER_META,
@@ -261,34 +272,154 @@ export default function App() {
     loadSavedPartsModules()
   );
   const [newPartNameInput, setNewPartNameInput] = useState<string>('');
+  const [activePartPicker, setActivePartPicker] = useState<PartThumbKind | null>(null);
   const [customSpeciesList, setCustomSpeciesList] = useState<SpeciesPreset[]>(() =>
     loadSavedCustomSpecies()
   );
+  const [hiddenSpeciesIds, setHiddenSpeciesIds] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem('arborea_hidden_species_v1');
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  });
 
-  // Merge user's saved AI species into the full catalog
+  // Merge user's saved AI species into the full catalog, filtering out deleted/hidden ones
   const allCatalogSpecies = React.useMemo(() => {
+    const hiddenSet = new Set(hiddenSpeciesIds);
     const existingIds = new Set(SPECIES_CATALOG.map((s) => s.id));
     const uniqueCustom = customSpeciesList.filter((s) => !existingIds.has(s.id));
-    return [...uniqueCustom, ...SPECIES_CATALOG];
-  }, [customSpeciesList]);
+    return [...uniqueCustom, ...SPECIES_CATALOG].filter((s) => !hiddenSet.has(s.id));
+  }, [customSpeciesList, hiddenSpeciesIds]);
+
+  // Progressive True 3D Thumbnail Renderer for every Species Card in Catalog / Aquatic / Moss / Xeno
+  useEffect(() => {
+    let cancelled = false;
+
+    // 1. Hydrate any already cached 3D thumbnails immediately
+    const preCached: Record<string, string> = {};
+    allCatalogSpecies.forEach((sp) => {
+      const hit = getCachedReal3DThumb(`species_${sp.id}`);
+      if (hit) preCached[sp.id] = hit;
+    });
+    if (Object.keys(preCached).length > 0) {
+      setLivePresetThumbs((prev) => ({ ...preCached, ...prev }));
+    }
+
+    // 2. Prioritize visible tab species first, then render the rest smoothly in background
+    const priorityFn = (sp: SpeciesPreset) => {
+      if (activeTab === 'aquatic' && sp.params.engine === 'aquatic_coral_algae') return 0;
+      if (activeTab === 'moss_fungi' && sp.params.engine === 'moss_fungi_rock') return 0;
+      if (activeTab === 'xenobotany' && sp.params.engine === 'alien_xenobotany') return 0;
+      if (activeTab === 'catalog' && (selectedCategory === 'Todas' || sp.category === selectedCategory)) return 0;
+      return 1;
+    };
+
+    const queue = allCatalogSpecies
+      .filter((sp) => !getCachedReal3DThumb(`species_${sp.id}`))
+      .sort((a, b) => priorityFn(a) - priorityFn(b));
+
+    let idx = 0;
+    const step = () => {
+      if (cancelled || idx >= queue.length) return;
+      const sp = queue[idx++];
+      const isAquatic = sp.category === 'Mundo Acuático (Corales & Algas)';
+      const isAlien = sp.category === 'Xenobotánica & Extraterrestres';
+      const isMoss = sp.category === 'Musgos, Líquenes & Hongos (Roca 3D)';
+      const bgHex = isAquatic ? '#062c38' : isAlien ? '#120d24' : isMoss ? '#0c1914' : '#0a111a';
+      const url = renderReal3DThumbnail(
+        `species_${sp.id}`,
+        { ...DEFAULT_TREE_PARAMS, ...sp.params },
+        bgHex,
+        'full'
+      );
+      if (url && !cancelled) {
+        setLivePresetThumbs((prev) => ({ ...prev, [sp.id]: url }));
+      }
+      if (!cancelled && idx < queue.length) {
+        window.setTimeout(step, 35);
+      }
+    };
+
+    const startId = window.setTimeout(step, 180);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(startId);
+    };
+  }, [allCatalogSpecies, activeTab, selectedCategory]);
 
   const viewportRef = useRef<TreeViewportHandle | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const aiFileInputRef = useRef<HTMLInputElement | null>(null);
+  const trunkSectionRef = useRef<HTMLDetailsElement | null>(null);
+  const canopySectionRef = useRef<HTMLDetailsElement | null>(null);
+  const rootsSectionRef = useRef<HTMLDetailsElement | null>(null);
+  const baseSectionRef = useRef<HTMLDivElement | null>(null);
+  const [highlightedPart, setHighlightedPart] = useState<ViewportHitPart | null>(null);
 
   const currentSpecies =
-    allCatalogSpecies.find((s) => s.id === params.presetId) || allCatalogSpecies[0];
+    allCatalogSpecies.find((s) => s.id === params.presetId) || allCatalogSpecies[0] || SPECIES_CATALOG[0];
 
-  // Keep a live WebGL miniature thumbnail for the currently viewed preset
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      const thumb = viewportRef.current?.captureThumbnail(240, 160);
-      if (thumb && params.presetId) {
-        setLivePresetThumbs((prev) => ({ ...prev, [params.presetId]: thumb }));
+  const handleRemoveSpecies = useCallback(
+    (sp: SpeciesPreset, e: React.MouseEvent) => {
+      e.stopPropagation();
+      const isCustom = customSpeciesList.some((c) => c.id === sp.id);
+      if (isCustom) {
+        const nextCustom = deleteCustomSpeciesFromApp(sp.id);
+        setCustomSpeciesList(nextCustom);
+      } else {
+        setHiddenSpeciesIds((prev) => {
+          if (prev.includes(sp.id)) return prev;
+          const next = [...prev, sp.id];
+          try {
+            localStorage.setItem('arborea_hidden_species_v1', JSON.stringify(next));
+          } catch {
+            // ignore storage errors
+          }
+          return next;
+        });
       }
-    }, 320);
-    return () => window.clearTimeout(timer);
-  }, [params.presetId]);
+      if (params.presetId === sp.id) {
+        const fallback = allCatalogSpecies.find((s) => s.id !== sp.id) || SPECIES_CATALOG[0];
+        if (fallback) {
+          setParams((prev) => ({
+            ...DEFAULT_TREE_PARAMS,
+            ...fallback.params,
+            presetId: fallback.id,
+            sunElevation: prev.sunElevation,
+            sunAzimuth: prev.sunAzimuth,
+          }));
+        }
+      }
+      setSaveNotice(`Especie "${sp.name}" eliminada`);
+      window.setTimeout(() => setSaveNotice(null), 2200);
+    },
+    [customSpeciesList, allCatalogSpecies, params.presetId]
+  );
+
+  // Ensure the currently viewed preset has a clean real-3D thumbnail if not yet rendered offscreen
+  useEffect(() => {
+    if (!params.presetId) return;
+    const cached = getCachedReal3DThumb(`species_${params.presetId}`);
+    if (cached) return;
+    const sp = allCatalogSpecies.find((s) => s.id === params.presetId);
+    if (!sp) return;
+    const isAquatic = sp.category === 'Mundo Acuático (Corales & Algas)';
+    const isAlien = sp.category === 'Xenobotánica & Extraterrestres';
+    const isMoss = sp.category === 'Musgos, Líquenes & Hongos (Roca 3D)';
+    const bgHex = isAquatic ? '#062c38' : isAlien ? '#120d24' : isMoss ? '#0c1914' : '#0a111a';
+    const url = renderReal3DThumbnail(
+      `species_${sp.id}`,
+      { ...DEFAULT_TREE_PARAMS, ...sp.params },
+      bgHex,
+      'full'
+    );
+    if (url) {
+      setLivePresetThumbs((prev) => ({ ...prev, [sp.id]: url }));
+    }
+  }, [params.presetId, allCatalogSpecies]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -317,6 +448,47 @@ export default function App() {
     }, 2600);
   }, []);
 
+  const handleViewportPartClick = useCallback(
+    (part: ViewportHitPart) => {
+      setSidebarOpen(true);
+      setHighlightedPart(part);
+      window.setTimeout(() => {
+        setHighlightedPart((prev) => (prev === part ? null : prev));
+      }, 3200);
+
+      if (part === 'ecosystem_base') {
+        setActiveTab('shaders');
+        showTempNotice('Base del Ecosistema seleccionada en el visor');
+        window.setTimeout(() => {
+          baseSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 60);
+        return;
+      }
+
+      setActiveTab('foliage');
+      const labels: Record<Exclude<ViewportHitPart, 'ecosystem_base'>, string> = {
+        trunk: 'Tronco / Tallos / Roca',
+        canopy: 'Copa / Flores / Hojas',
+        roots: 'Raíces / Filamentos / Espinas',
+      };
+      showTempNotice(`Parte seleccionada: ${labels[part]}`);
+
+      window.setTimeout(() => {
+        const targetRef =
+          part === 'canopy'
+            ? canopySectionRef.current || trunkSectionRef.current
+            : part === 'roots'
+            ? rootsSectionRef.current || trunkSectionRef.current
+            : trunkSectionRef.current;
+        if (targetRef) {
+          targetRef.open = true;
+          targetRef.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }, 60);
+    },
+    [showTempNotice]
+  );
+
   const updateParam = useCallback(<K extends keyof TreeParams>(key: K, value: TreeParams[K]) => {
     setParams((prev) => ({ ...prev, [key]: value }));
   }, []);
@@ -342,10 +514,7 @@ export default function App() {
         seed: prev.seed,
         sunElevation: prev.sunElevation,
         sunAzimuth: prev.sunAzimuth,
-        representationStyle:
-          found.params.representationStyle && found.params.representationStyle !== 'botanical_leaves'
-            ? found.params.representationStyle
-            : prev.representationStyle,
+        representationStyle: found.params.representationStyle || 'botanical_leaves',
       }));
     }
   };
@@ -564,9 +733,10 @@ export default function App() {
     setCustomModelName(hybrid.hybridName);
     setParams((prev) => ({
       ...hybrid.params,
+      presetId: `hybrid_${hybrid.params.seed}_${Date.now()}`,
       sunElevation: prev.sunElevation,
       sunAzimuth: prev.sunAzimuth,
-      representationStyle: prev.representationStyle,
+      representationStyle: hybrid.params.representationStyle || 'botanical_leaves',
     }));
     showTempNotice(`Nuevo híbrido: ${hybrid.hybridName}`);
   };
@@ -700,38 +870,69 @@ export default function App() {
     }
   };
 
+  const inferDefaultCustomElement = useCallback((p: TreeParams): CustomBotanicalElement => {
+    if (p.customElement) return p.customElement;
+    const stemStructure: StemStructureType =
+      p.engine === 'weeping'
+        ? 'weeping_willow'
+        : p.engine === 'palm'
+        ? 'herbaceous_curved_stalk'
+        : p.engine === 'bamboo'
+        ? 'segmented_bamboo_equisetum'
+        : p.engine === 'rosette'
+        ? 'rosette_cluster'
+        : p.engine === 'cactus'
+        ? 'thorny_horn_crown'
+        : 'sympodial_tree';
+    const canopyElement: CanopyElementType =
+      p.engine === 'palm'
+        ? 'pinnate_fern_palm_fronds'
+        : p.engine === 'rosette'
+        ? 'succulent_fleshy_rosettes'
+        : p.foliageType === 'blossom_clusters'
+        ? 'custom_flower_corolla'
+        : p.foliageType === 'alien_umbrella_caps'
+        ? 'custom_fungi_cap'
+        : p.foliageType === 'fronds_pinnate' || p.foliageType === 'fronds_palmate' || p.foliageType === 'fronds_fern'
+        ? 'pinnate_fern_palm_fronds'
+        : 'custom_leaf_lamina';
+    const hangingElement: HangingElementType =
+      p.engine === 'weeping' || p.foliageType === 'weeping_strands' ? 'weeping_filaments' : 'none';
+    return {
+      id: `elem_custom_${Date.now()}`,
+      name: `Elemento Modular #${p.seed}`,
+      scientificName: 'Botanica modularis sp.',
+      description: 'Combinación modular de tallo, copa, superficie y filamentos.',
+      createdAt: Date.now(),
+      stemStructure,
+      canopyElement,
+      surfaceElement: 'smooth_striated',
+      hangingElement,
+      lobeCount: 6,
+      cupDepth: 0.45,
+      spiralTurns: 1.25,
+      spiralArms: Math.max(2, p.branchCount || 5),
+      stemCount: Math.max(2, p.branchCount || 5),
+      trunkBentS: 0.25,
+      branchSpread: 0.65,
+      branchDroop: p.engine === 'weeping' ? 0.55 : 0.15,
+      capDomeHeight: 0.56,
+      capSpotDensity: 0.45,
+      gillCount: 20,
+      petalOpenness: 0.4,
+      leafSerration: 0.35,
+      thornDensity: p.engine === 'cactus' ? 0.75 : 0.1,
+      thornLength: 0.9,
+      filamentCount: hangingElement === 'none' ? 8 : 24,
+      filamentLength: 1.2,
+      padLayers: 6,
+    };
+  }, []);
+
   const updateCustomPart = useCallback(
     (patch: Partial<CustomBotanicalElement>) => {
       setParams((prev) => {
-        const base: CustomBotanicalElement = prev.customElement || {
-          id: `elem_custom_${Date.now()}`,
-          name: `Elemento Modular #${prev.seed}`,
-          scientificName: 'Botanica modularis sp.',
-          description: 'Combinación modular de tallo, copa, superficie y filamentos.',
-          createdAt: Date.now(),
-          stemStructure: 'multi_stalk_umbel_colony',
-          canopyElement: 'custom_fungi_cap',
-          surfaceElement: 'smooth_striated',
-          hangingElement: 'weeping_filaments',
-          lobeCount: 7,
-          cupDepth: 0.5,
-          spiralTurns: 1.25,
-          spiralArms: 8,
-          stemCount: 8,
-          trunkBentS: 0.32,
-          branchSpread: 0.65,
-          branchDroop: 0.18,
-          capDomeHeight: 0.56,
-          capSpotDensity: 0.85,
-          gillCount: 24,
-          petalOpenness: 0.35,
-          leafSerration: 0.4,
-          thornDensity: 0.15,
-          thornLength: 0.9,
-          filamentCount: 24,
-          filamentLength: 1.2,
-          padLayers: 6,
-        };
+        const base = inferDefaultCustomElement(prev);
         return {
           ...prev,
           engine: 'composed_custom',
@@ -743,7 +944,7 @@ export default function App() {
         };
       });
     },
-    []
+    [inferDefaultCustomElement]
   );
 
   const filteredSpecies =
@@ -751,11 +952,11 @@ export default function App() {
       ? allCatalogSpecies
       : allCatalogSpecies.filter((s) => s.category === selectedCategory);
 
-  const mossFungiPresets = SPECIES_CATALOG.filter(
+  const mossFungiPresets = allCatalogSpecies.filter(
     (s) => s.category === 'Musgos, Líquenes & Hongos (Roca 3D)'
   );
 
-  const aquaticPresets = SPECIES_CATALOG.filter(
+  const aquaticPresets = allCatalogSpecies.filter(
     (s) => s.category === 'Mundo Acuático (Corales & Algas)'
   );
 
@@ -816,18 +1017,23 @@ export default function App() {
             )}
           </button>
 
-          <select
-            value={params.presetId}
-            onChange={(e) => selectSpeciesPreset(e.target.value)}
-            title="Especie o Modelo Activo"
-            className="w-40 sm:w-52 bg-[#141e2d] border border-slate-700/80 rounded px-2 py-1 text-xs font-medium text-slate-100 focus:outline-none focus:border-emerald-500 truncate"
+          <button
+            onClick={() => {
+              setSidebarOpen(true);
+              setActiveTab('catalog');
+            }}
+            title="Abrir Catálogo visual con miniaturas 3D de todas las especies"
+            className="max-w-[210px] px-2.5 py-1 rounded bg-[#141e2d] hover:bg-slate-800 border border-slate-700/80 hover:border-emerald-500/50 text-xs font-medium text-slate-100 flex items-center gap-1.5 cursor-pointer truncate"
           >
-            {allCatalogSpecies.map((sp) => (
-              <option key={sp.id} value={sp.id}>
-                {sp.name}
-              </option>
-            ))}
-          </select>
+            <Trees className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            <span className="truncate">
+              {activeAiDesignInfo
+                ? activeAiDesignInfo.name
+                : activeHybridInfo
+                ? activeHybridInfo.name
+                : currentSpecies.name}
+            </span>
+          </button>
 
           <button
             onClick={randomizeSeed}
@@ -1265,6 +1471,7 @@ export default function App() {
                         {activeAiDesignInfo.name}
                       </div>
                       <div className="text-[9px] text-slate-400 truncate">
+                        {activeAiDesignInfo.providerUsed ? `${activeAiDesignInfo.providerUsed} · ` : ''}
                         {activeAiDesignInfo.scientificName}
                       </div>
                     </div>
@@ -1576,17 +1783,29 @@ export default function App() {
                             }`}
                           >
                             <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0">
-                                <div className="font-semibold text-xs text-slate-100 truncate">
-                                  {part.name}
-                                </div>
-                                <div className="text-[10px] text-slate-400 mt-0.5">
-                                  Guardada: {formattedDate}
+                              <div className="flex items-center gap-2 min-w-0">
+                                <PartVisualThumb
+                                  kind="stem"
+                                  value={part.element.stemStructure}
+                                  size={34}
+                                />
+                                <PartVisualThumb
+                                  kind="canopy"
+                                  value={part.element.canopyElement}
+                                  size={34}
+                                />
+                                <div className="min-w-0">
+                                  <div className="font-semibold text-xs text-slate-100 truncate">
+                                    {part.name}
+                                  </div>
+                                  <div className="text-[10px] text-slate-400 mt-0.5">
+                                    {formattedDate}
+                                  </div>
                                 </div>
                               </div>
                               {(isSpline || isLathe) && (
                                 <span className="px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300 text-[9px] font-semibold shrink-0">
-                                  {isSpline ? 'Curva Spline IA' : 'Revolución IA'}
+                                  {isSpline ? 'Spline IA' : 'Revolución IA'}
                                 </span>
                               )}
                             </div>
@@ -1661,6 +1880,23 @@ export default function App() {
                         </option>
                       ))}
                     </select>
+                    {hiddenSpeciesIds.length > 0 && (
+                      <button
+                        onClick={() => {
+                          setHiddenSpeciesIds([]);
+                          try {
+                            localStorage.removeItem('arborea_hidden_species_v1');
+                          } catch {
+                            // ignore
+                          }
+                          showTempNotice('Especies ocultas restauradas');
+                        }}
+                        className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 text-[10px] text-amber-300 font-medium cursor-pointer shrink-0"
+                        title="Restaurar especies eliminadas del catálogo"
+                      >
+                        Restaurar ({hiddenSpeciesIds.length})
+                      </button>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
@@ -1679,9 +1915,17 @@ export default function App() {
                         );
 
                       return (
-                        <button
+                        <div
                           key={sp.id}
+                          role="button"
+                          tabIndex={0}
                           onClick={() => selectSpeciesPreset(sp.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              selectSpeciesPreset(sp.id);
+                            }
+                          }}
                           className={`group text-left rounded-lg border overflow-hidden transition-all cursor-pointer flex flex-col justify-between ${
                             isSelected
                               ? 'bg-emerald-950/50 border-emerald-500/80 shadow-sm'
@@ -1700,6 +1944,13 @@ export default function App() {
                               alt={sp.name}
                               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
                             />
+                            <button
+                              onClick={(e) => handleRemoveSpecies(sp, e)}
+                              title="Eliminar esta especie del catálogo"
+                              className="absolute top-1.5 left-1.5 p-1 rounded bg-slate-950/85 hover:bg-rose-900 border border-slate-700 hover:border-rose-400 text-slate-300 hover:text-rose-200 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
                             <div className="absolute top-1.5 right-1.5 flex items-center gap-0.5 bg-slate-950/80 px-1 py-0.5 rounded border border-slate-800">
                               <span
                                 className="w-2 h-2 rounded-xs"
@@ -1751,7 +2002,7 @@ export default function App() {
                               </span>
                             </div>
                           </div>
-                        </button>
+                        </div>
                       );
                     })}
                   </div>
@@ -1762,12 +2013,30 @@ export default function App() {
               {activeTab === 'aquatic' && (
                 <div className="flex flex-col gap-3.5">
                   <div className="bg-[#0d2430] border border-cyan-500/40 rounded-lg p-3 space-y-2.5">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-2">
                       <span className="text-[11px] font-semibold uppercase tracking-wider text-cyan-300 flex items-center gap-1.5">
                         <Waves className="w-3.5 h-3.5 text-cyan-400" />
-                        12 Especies Acuáticas (Corales & Algas 3D)
+                        {aquaticPresets.length} Especies Acuáticas (Corales & Algas 3D)
                       </span>
-                      <span className="text-[10px] font-mono text-cyan-400">MARINO-3D</span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {hiddenSpeciesIds.length > 0 && (
+                          <button
+                            onClick={() => {
+                              setHiddenSpeciesIds([]);
+                              try {
+                                localStorage.removeItem('arborea_hidden_species_v1');
+                              } catch {
+                                // ignore
+                              }
+                              showTempNotice('Especies ocultas restauradas');
+                            }}
+                            className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 text-[9px] text-amber-300 cursor-pointer"
+                          >
+                            Restaurar ({hiddenSpeciesIds.length})
+                          </button>
+                        )}
+                        <span className="text-[10px] font-mono text-cyan-400">MARINO-3D</span>
+                      </div>
                     </div>
 
                     {/* Quick 1-click Underwater Background Environment Switcher */}
@@ -1795,7 +2064,7 @@ export default function App() {
                       })}
                     </div>
 
-                    <div className="grid grid-cols-1 gap-1.5 max-h-[275px] overflow-y-auto studio-scroll pr-1">
+                    <div className="grid grid-cols-2 gap-1.5 max-h-[300px] overflow-y-auto studio-scroll pr-1">
                       {aquaticPresets.map((sp) => {
                         const active = sp.id === params.presetId;
                         const thumbUrl =
@@ -1807,10 +2076,12 @@ export default function App() {
                             sp.id
                           );
                         return (
-                          <button
+                          <div
                             key={sp.id}
+                            role="button"
+                            tabIndex={0}
                             onClick={() => selectSpeciesPreset(sp.id)}
-                            className={`text-left p-1.5 rounded-lg border transition-all cursor-pointer flex items-center justify-between gap-2.5 ${
+                            className={`group relative text-left rounded-lg border overflow-hidden transition-all cursor-pointer flex flex-col justify-between ${
                               active
                                 ? 'bg-cyan-950/80 border-cyan-400 shadow-xs'
                                 : 'bg-[#091b24] border-slate-800 hover:border-cyan-500/50'
@@ -1819,31 +2090,21 @@ export default function App() {
                             <img
                               src={thumbUrl}
                               alt={sp.name}
-                              className="w-14 h-11 rounded object-cover border border-slate-700/80 shrink-0 bg-[#04141d]"
+                              className="w-full h-20 object-cover border-b border-slate-800/80 bg-[#04141d]"
                             />
-                            <div className="min-w-0 flex-1">
-                              <div className="text-xs font-semibold text-slate-100 truncate">
+                            <button
+                              onClick={(e) => handleRemoveSpecies(sp, e)}
+                              title="Eliminar esta especie"
+                              className="absolute top-1 left-1 p-1 rounded bg-slate-950/85 hover:bg-rose-900 border border-slate-700 hover:border-rose-400 text-slate-300 hover:text-rose-200 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                            <div className="p-1.5">
+                              <div className="text-[11px] font-semibold text-slate-100 leading-tight truncate">
                                 {sp.name}
                               </div>
-                              <div className="text-[10px] text-slate-400 line-clamp-1">
-                                {sp.description}
-                              </div>
                             </div>
-                            <div className="flex items-center gap-1 shrink-0 pr-1">
-                              <span
-                                className="w-2.5 h-2.5 rounded-sm border border-white/20"
-                                style={{ backgroundColor: sp.params.colorTrunk }}
-                              />
-                              <span
-                                className="w-2.5 h-2.5 rounded-sm border border-white/20"
-                                style={{ backgroundColor: sp.params.colorLeafMain }}
-                              />
-                              <span
-                                className="w-2.5 h-2.5 rounded-sm border border-white/20"
-                                style={{ backgroundColor: sp.params.colorLeafTip }}
-                              />
-                            </div>
-                          </button>
+                          </div>
                         );
                       })}
                     </div>
@@ -1854,21 +2115,6 @@ export default function App() {
                     <div className="text-[11px] font-semibold uppercase tracking-wider text-cyan-400">
                       Morfología de Arrecife, Corales, Anémonas & Algas
                     </div>
-
-                    <select
-                      value={params.aquaticArchetype || 'staghorn_acropora'}
-                      onChange={(e) => {
-                        updateParam('engine', 'aquatic_coral_algae');
-                        updateParam('aquaticArchetype', e.target.value as AquaticArchetype);
-                      }}
-                      className="w-full bg-[#0e151f] border border-cyan-500/40 rounded px-2 py-1.5 text-xs text-cyan-200 font-medium"
-                    >
-                      {(Object.keys(AQUATIC_ARCHETYPE_META) as AquaticArchetype[]).map((arch) => (
-                        <option key={arch} value={arch}>
-                          {AQUATIC_ARCHETYPE_META[arch].label}
-                        </option>
-                      ))}
-                    </select>
 
                     <SliderControl
                       label="Altura de Coral / Bosque Kelp"
@@ -1948,19 +2194,37 @@ export default function App() {
               {activeTab === 'moss_fungi' && (
                 <div className="flex flex-col gap-3.5">
                   <div className="bg-[#11231d] border border-lime-500/40 rounded-lg p-3 space-y-2.5">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-2">
                       <span className="text-[11px] font-semibold uppercase tracking-wider text-lime-300 flex items-center gap-1.5">
                         <Sprout className="w-3.5 h-3.5 text-lime-400" />
-                        12 Especies de Musgos, Líquenes & Setas sobre Roca 3D
+                        {mossFungiPresets.length} Musgos, Líquenes & Setas sobre Roca 3D
                       </span>
-                      <span className="text-[10px] font-mono text-emerald-400">ROCA-3D</span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {hiddenSpeciesIds.length > 0 && (
+                          <button
+                            onClick={() => {
+                              setHiddenSpeciesIds([]);
+                              try {
+                                localStorage.removeItem('arborea_hidden_species_v1');
+                              } catch {
+                                // ignore
+                              }
+                              showTempNotice('Especies ocultas restauradas');
+                            }}
+                            className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 text-[9px] text-amber-300 cursor-pointer"
+                          >
+                            Restaurar ({hiddenSpeciesIds.length})
+                          </button>
+                        )}
+                        <span className="text-[10px] font-mono text-emerald-400">ROCA-3D</span>
+                      </div>
                     </div>
 
                     <p className="text-[11px] text-slate-300 leading-relaxed">
                       Selecciona una porción de roca natural 3D tapizada con almohadillas de musgo briófito, esporofitos, líquenes o colonias de hongos del bosque:
                     </p>
 
-                    <div className="grid grid-cols-1 gap-1.5 max-h-[275px] overflow-y-auto studio-scroll pr-1">
+                    <div className="grid grid-cols-2 gap-1.5 max-h-[300px] overflow-y-auto studio-scroll pr-1">
                       {mossFungiPresets.map((sp) => {
                         const active = sp.id === params.presetId;
                         const thumbUrl =
@@ -1972,10 +2236,12 @@ export default function App() {
                             sp.id
                           );
                         return (
-                          <button
+                          <div
                             key={sp.id}
+                            role="button"
+                            tabIndex={0}
                             onClick={() => selectSpeciesPreset(sp.id)}
-                            className={`text-left p-1.5 rounded-lg border transition-all cursor-pointer flex items-center justify-between gap-2.5 ${
+                            className={`group relative text-left rounded-lg border overflow-hidden transition-all cursor-pointer flex flex-col justify-between ${
                               active
                                 ? 'bg-emerald-950/80 border-lime-400 shadow-xs'
                                 : 'bg-[#0e1a16] border-slate-800 hover:border-lime-500/50'
@@ -1984,31 +2250,21 @@ export default function App() {
                             <img
                               src={thumbUrl}
                               alt={sp.name}
-                              className="w-14 h-11 rounded object-cover border border-slate-700/80 shrink-0 bg-[#090e15]"
+                              className="w-full h-20 object-cover border-b border-slate-800/80 bg-[#090e15]"
                             />
-                            <div className="min-w-0 flex-1">
-                              <div className="text-xs font-semibold text-slate-100 truncate">
+                            <button
+                              onClick={(e) => handleRemoveSpecies(sp, e)}
+                              title="Eliminar esta especie"
+                              className="absolute top-1 left-1 p-1 rounded bg-slate-950/85 hover:bg-rose-900 border border-slate-700 hover:border-rose-400 text-slate-300 hover:text-rose-200 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                            <div className="p-1.5">
+                              <div className="text-[11px] font-semibold text-slate-100 leading-tight truncate">
                                 {sp.name}
                               </div>
-                              <div className="text-[10px] text-slate-400 line-clamp-1">
-                                {sp.description}
-                              </div>
                             </div>
-                            <div className="flex items-center gap-1 shrink-0 pr-1">
-                              <span
-                                className="w-2.5 h-2.5 rounded-sm border border-white/20"
-                                style={{ backgroundColor: sp.params.colorTrunk }}
-                              />
-                              <span
-                                className="w-2.5 h-2.5 rounded-sm border border-white/20"
-                                style={{ backgroundColor: sp.params.colorLeafMain }}
-                              />
-                              <span
-                                className="w-2.5 h-2.5 rounded-sm border border-white/20"
-                                style={{ backgroundColor: sp.params.colorLeafTip }}
-                              />
-                            </div>
-                          </button>
+                          </div>
                         );
                       })}
                     </div>
@@ -2019,26 +2275,6 @@ export default function App() {
                     <div className="text-[11px] font-semibold uppercase tracking-wider text-emerald-400">
                       Morfología de Roca 3D, Manto de Musgo & Hongos
                     </div>
-
-                    <select
-                      value={params.mossFungiArchetype || 'amanita_muscaria_moss'}
-                      onChange={(e) => {
-                        updateParam('engine', 'moss_fungi_rock');
-                        updateParam(
-                          'mossFungiArchetype',
-                          e.target.value as MossFungiArchetype
-                        );
-                      }}
-                      className="w-full bg-[#0e151f] border border-lime-500/40 rounded px-2 py-1.5 text-xs text-lime-200 font-medium"
-                    >
-                      {(Object.keys(MOSS_FUNGI_ARCHETYPE_META) as MossFungiArchetype[]).map(
-                        (arch) => (
-                          <option key={arch} value={arch}>
-                            {MOSS_FUNGI_ARCHETYPE_META[arch].label}
-                          </option>
-                        )
-                      )}
-                    </select>
 
                     <SliderControl
                       label="Tamaño de la Roca 3D (Sustrato)"
@@ -2112,15 +2348,33 @@ export default function App() {
               {activeTab === 'xenobotany' && (
                 <div className="flex flex-col gap-3.5">
                   <div className="bg-[#16152b] border border-purple-500/40 rounded-lg p-3 space-y-2.5">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-2">
                       <span className="text-[11px] font-semibold uppercase tracking-wider text-purple-300">
-                        12 Especies Extraterrestres (Folios 1, 2 & 3)
+                        {allCatalogSpecies.filter((s) => s.category === 'Xenobotánica & Extraterrestres').length} Especies Extraterrestres
                       </span>
-                      <span className="text-[10px] font-mono text-emerald-400">XENO-3D</span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {hiddenSpeciesIds.length > 0 && (
+                          <button
+                            onClick={() => {
+                              setHiddenSpeciesIds([]);
+                              try {
+                                localStorage.removeItem('arborea_hidden_species_v1');
+                              } catch {
+                                // ignore
+                              }
+                              showTempNotice('Especies ocultas restauradas');
+                            }}
+                            className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 text-[9px] text-amber-300 cursor-pointer"
+                          >
+                            Restaurar ({hiddenSpeciesIds.length})
+                          </button>
+                        )}
+                        <span className="text-[10px] font-mono text-emerald-400">XENO-3D</span>
+                      </div>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-1.5 max-h-[280px] overflow-y-auto studio-scroll pr-1">
-                      {SPECIES_CATALOG.filter(
+                    <div className="grid grid-cols-2 gap-1.5 max-h-[300px] overflow-y-auto studio-scroll pr-1">
+                      {allCatalogSpecies.filter(
                         (s) => s.category === 'Xenobotánica & Extraterrestres'
                       ).map((sp) => {
                         const active = sp.id === params.presetId;
@@ -2133,10 +2387,12 @@ export default function App() {
                             sp.id
                           );
                         return (
-                          <button
+                          <div
                             key={sp.id}
+                            role="button"
+                            tabIndex={0}
                             onClick={() => selectSpeciesPreset(sp.id)}
-                            className={`text-left p-1.5 rounded-lg border transition-all cursor-pointer flex items-center justify-between gap-2.5 ${
+                            className={`group relative text-left rounded-lg border overflow-hidden transition-all cursor-pointer flex flex-col justify-between ${
                               active
                                 ? 'bg-purple-950/70 border-emerald-400'
                                 : 'bg-[#121624] border-slate-800 hover:border-purple-500/50'
@@ -2145,31 +2401,21 @@ export default function App() {
                             <img
                               src={thumbUrl}
                               alt={sp.name}
-                              className="w-14 h-11 rounded object-cover border border-slate-700/80 shrink-0 bg-[#090e15]"
+                              className="w-full h-20 object-cover border-b border-slate-800/80 bg-[#090e15]"
                             />
-                            <div className="min-w-0 flex-1">
-                              <div className="text-xs font-semibold text-slate-100 truncate">
+                            <button
+                              onClick={(e) => handleRemoveSpecies(sp, e)}
+                              title="Eliminar esta especie"
+                              className="absolute top-1 left-1 p-1 rounded bg-slate-950/85 hover:bg-rose-900 border border-slate-700 hover:border-rose-400 text-slate-300 hover:text-rose-200 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                            <div className="p-1.5">
+                              <div className="text-[11px] font-semibold text-slate-100 leading-tight truncate">
                                 {sp.name}
                               </div>
-                              <div className="text-[10px] text-slate-400 line-clamp-1">
-                                {sp.description}
-                              </div>
                             </div>
-                            <div className="flex items-center gap-1 shrink-0 pr-1">
-                              <span
-                                className="w-2.5 h-2.5 rounded-sm border border-white/20"
-                                style={{ backgroundColor: sp.params.colorTrunk }}
-                              />
-                              <span
-                                className="w-2.5 h-2.5 rounded-sm border border-white/20"
-                                style={{ backgroundColor: sp.params.colorLeafMain }}
-                              />
-                              <span
-                                className="w-2.5 h-2.5 rounded-sm border border-white/20"
-                                style={{ backgroundColor: sp.params.colorFlower }}
-                              />
-                            </div>
-                          </button>
+                          </div>
                         );
                       })}
                     </div>
@@ -2180,21 +2426,6 @@ export default function App() {
                     <div className="text-[11px] font-semibold uppercase tracking-wider text-emerald-400">
                       Arquetipo Xenobotánico & Morfología Orgánica
                     </div>
-
-                    <select
-                      value={params.alienArchetype || 'mega_mushroom_terraced'}
-                      onChange={(e) => {
-                        updateParam('engine', 'alien_xenobotany');
-                        updateParam('alienArchetype', e.target.value as AlienArchetype);
-                      }}
-                      className="w-full bg-[#0e151f] border border-slate-700 rounded px-2 py-1.5 text-xs text-slate-200"
-                    >
-                      {(Object.keys(ALIEN_ARCHETYPE_META) as AlienArchetype[]).map((arch) => (
-                        <option key={arch} value={arch}>
-                          {ALIEN_ARCHETYPE_META[arch].label}
-                        </option>
-                      ))}
-                    </select>
 
                     <SliderControl
                       label="Altura de Estructura Xenobotánica"
@@ -2247,7 +2478,14 @@ export default function App() {
               {activeTab === 'shaders' && (
                 <div className="flex flex-col gap-3.5">
                   {/* Integrated 3D Ecosystem Bases (Biomes / Dioramas) */}
-                  <div className="bg-[#11202b] border border-cyan-500/40 rounded-lg p-3 space-y-3">
+                  <div
+                    ref={baseSectionRef}
+                    className={`bg-[#11202b] border rounded-lg p-3 space-y-3 transition-all ${
+                      highlightedPart === 'ecosystem_base'
+                        ? 'border-cyan-400 ring-2 ring-cyan-400/70 shadow-lg'
+                        : 'border-cyan-500/40'
+                    }`}
+                  >
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] font-semibold uppercase tracking-wider text-cyan-300">
                         Bases de Ecosistema 3D (Terreno Integrado)
@@ -2304,8 +2542,8 @@ export default function App() {
                     <SliderControl
                       label="Escala / Amplitud de la Base"
                       value={quality.ecosystemBaseScale ?? 1.0}
-                      min={0.65}
-                      max={1.8}
+                      min={0.4}
+                      max={2.4}
                       step={0.05}
                       unit="×"
                       onChange={(v) => updateQuality('ecosystemBaseScale', v)}
@@ -2777,38 +3015,16 @@ export default function App() {
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between gap-1.5">
-                        <select
-                          value={params.customElement?.id || ''}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            const foundEl = customElements.find((el) => el.id === val);
-                            const foundPart = savedPartModules.find((pm) => pm.id === val);
-                            const target = foundEl || foundPart?.element;
-                            if (target) {
-                              updateParam('engine', 'composed_custom');
-                              updateParam('foliageType', 'ai_custom_element');
-                              updateParam('customElement', { ...target });
-                              showTempNotice(`Parte aplicada: ${foundPart?.name || target.name}`);
-                            }
-                          }}
-                          className="flex-1 min-w-0 bg-[#0d141d] border border-emerald-500/35 rounded px-2 py-1 text-[11px] text-emerald-200"
-                        >
-                          <option value="">
-                            Biblioteca guardada ({customElements.length + savedPartModules.length})...
-                          </option>
-                          {savedPartModules.map((pm) => (
-                            <option key={pm.id} value={pm.id}>
-                              [Parte] {pm.name}
-                            </option>
-                          ))}
-                          {customElements.map((el) => (
-                            <option key={el.id} value={el.id}>
-                              {el.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                      <button
+                        onClick={() => setActiveTab('ai_parts')}
+                        className="w-full py-1 px-2 rounded bg-[#0d141d] hover:bg-amber-950/40 border border-amber-500/35 text-[10px] text-amber-200 font-medium flex items-center justify-between cursor-pointer"
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <Sparkles className="w-3 h-3 text-amber-400" />
+                          Ver tarjetas visuales de Partes guardadas ({savedPartModules.length})
+                        </span>
+                        <span className="text-amber-400">Abrir →</span>
+                      </button>
 
                       <div className="flex items-center gap-1.5">
                         <input
@@ -2873,134 +3089,227 @@ export default function App() {
                         </button>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-1.5">
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-[10px] text-slate-400">Tallo / Tronco / Colonia:</span>
-                          <select
-                            value={params.customElement?.stemStructure || 'multi_stalk_umbel_colony'}
-                            onChange={(e) =>
-                              updateCustomPart({ stemStructure: e.target.value as StemStructureType })
-                            }
-                            className="bg-[#0d141d] border border-slate-700 rounded px-1.5 py-1 text-[11px] text-slate-200"
-                          >
-                            {(Object.keys(STEM_STRUCTURE_META) as StemStructureType[]).map((st) => (
-                              <option key={st} value={st}>
-                                {STEM_STRUCTURE_META[st].label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
+                      {(() => {
+                        const cleanPartName = (raw: string) =>
+                          raw.replace(/^\d+\.\s*✨?\s*/, '').split('(')[0].trim();
 
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-[10px] text-slate-400">Copa / Sombrero / Flor:</span>
-                          <select
-                            value={params.customElement?.canopyElement || 'custom_fungi_cap'}
-                            onChange={(e) =>
-                              updateCustomPart({ canopyElement: e.target.value as CanopyElementType })
-                            }
-                            className="bg-[#0d141d] border border-slate-700 rounded px-1.5 py-1 text-[11px] text-slate-200"
-                          >
-                            {(Object.keys(CANOPY_ELEMENT_META) as CanopyElementType[]).map((ce) => (
-                              <option key={ce} value={ce}>
-                                {CANOPY_ELEMENT_META[ce].label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
+                        const inferred = inferDefaultCustomElement(params);
+                        const curStem = inferred.stemStructure;
+                        const curCanopy = inferred.canopyElement;
+                        const curSurface = inferred.surfaceElement;
+                        const curHanging = inferred.hangingElement;
+                        const curTip = inferred.synthesizedTipPrimitive || 'none';
+                        const curBasal = inferred.synthesizedBasalFoliage || 'none';
+                        const curBark = params.barkType;
 
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-[10px] text-slate-400">Superficie / Espinas:</span>
-                          <select
-                            value={params.customElement?.surfaceElement || 'smooth_striated'}
-                            onChange={(e) =>
-                              updateCustomPart({ surfaceElement: e.target.value as SurfaceElementType })
-                            }
-                            className="bg-[#0d141d] border border-slate-700 rounded px-1.5 py-1 text-[11px] text-slate-200"
-                          >
-                            {(Object.keys(SURFACE_ELEMENT_META) as SurfaceElementType[]).map((se) => (
-                              <option key={se} value={se}>
-                                {SURFACE_ELEMENT_META[se].label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
+                        const slots: Array<{
+                          kind: PartThumbKind;
+                          title: string;
+                          value: string;
+                          label: string;
+                          fullWidth?: boolean;
+                        }> = [
+                          {
+                            kind: 'stem',
+                            title: 'Tallo / Tronco',
+                            value: curStem,
+                            label: cleanPartName(STEM_STRUCTURE_META[curStem]?.label || curStem),
+                          },
+                          {
+                            kind: 'canopy',
+                            title: 'Copa / Flor',
+                            value: curCanopy,
+                            label: cleanPartName(CANOPY_ELEMENT_META[curCanopy]?.label || curCanopy),
+                          },
+                          {
+                            kind: 'surface',
+                            title: 'Superficie',
+                            value: curSurface,
+                            label: cleanPartName(SURFACE_ELEMENT_META[curSurface]?.label || curSurface),
+                          },
+                          {
+                            kind: 'hanging',
+                            title: 'Colgantes',
+                            value: curHanging,
+                            label: cleanPartName(HANGING_ELEMENT_META[curHanging]?.label || curHanging),
+                          },
+                          {
+                            kind: 'tip',
+                            title: 'Puntas',
+                            value: curTip,
+                            label: cleanPartName(SYNTHESIZED_TIP_META[curTip]?.label || curTip),
+                          },
+                          {
+                            kind: 'basal',
+                            title: 'Base',
+                            value: curBasal,
+                            label: cleanPartName(SYNTHESIZED_BASAL_META[curBasal]?.label || curBasal),
+                          },
+                          {
+                            kind: 'bark',
+                            title: 'Shader Corteza',
+                            value: curBark,
+                            label: cleanPartName(BARK_TYPE_META[curBark]?.label || curBark),
+                            fullWidth: true,
+                          },
+                        ];
 
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-[10px] text-slate-400">Filamentos / Zarcillos:</span>
-                          <select
-                            value={params.customElement?.hangingElement || 'weeping_filaments'}
-                            onChange={(e) =>
-                              updateCustomPart({ hangingElement: e.target.value as HangingElementType })
-                            }
-                            className="bg-[#0d141d] border border-slate-700 rounded px-1.5 py-1 text-[11px] text-slate-200"
-                          >
-                            {(Object.keys(HANGING_ELEMENT_META) as HangingElementType[]).map((he) => (
-                              <option key={he} value={he}>
-                                {HANGING_ELEMENT_META[he].label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
+                        const pickerOptions: Record<
+                          PartThumbKind,
+                          Array<{ id: string; label: string }>
+                        > = {
+                          stem: (Object.keys(STEM_STRUCTURE_META) as StemStructureType[]).map((k) => ({
+                            id: k,
+                            label: cleanPartName(STEM_STRUCTURE_META[k].label),
+                          })),
+                          canopy: (Object.keys(CANOPY_ELEMENT_META) as CanopyElementType[]).map((k) => ({
+                            id: k,
+                            label: cleanPartName(CANOPY_ELEMENT_META[k].label),
+                          })),
+                          surface: (Object.keys(SURFACE_ELEMENT_META) as SurfaceElementType[]).map((k) => ({
+                            id: k,
+                            label: cleanPartName(SURFACE_ELEMENT_META[k].label),
+                          })),
+                          hanging: (Object.keys(HANGING_ELEMENT_META) as HangingElementType[]).map((k) => ({
+                            id: k,
+                            label: cleanPartName(HANGING_ELEMENT_META[k].label),
+                          })),
+                          tip: (Object.keys(SYNTHESIZED_TIP_META) as SynthesizedTipPrimitive[]).map((k) => ({
+                            id: k,
+                            label: cleanPartName(SYNTHESIZED_TIP_META[k].label),
+                          })),
+                          basal: (Object.keys(SYNTHESIZED_BASAL_META) as SynthesizedBasalFoliageType[]).map((k) => ({
+                            id: k,
+                            label: cleanPartName(SYNTHESIZED_BASAL_META[k].label),
+                          })),
+                          bark: (Object.keys(BARK_TYPE_META) as BarkType[]).map((k) => ({
+                            id: k,
+                            label: cleanPartName(BARK_TYPE_META[k].label),
+                          })),
+                        };
 
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-[10px] text-emerald-300/90">Micro-Pieza en Puntas (IA):</span>
-                          <select
-                            value={params.customElement?.synthesizedTipPrimitive || 'none'}
-                            onChange={(e) =>
-                              updateCustomPart({
-                                synthesizedTipPrimitive: e.target.value as SynthesizedTipPrimitive,
-                              })
-                            }
-                            className="bg-[#0d141d] border border-emerald-500/40 rounded px-1.5 py-1 text-[11px] text-emerald-100"
-                          >
-                            {(Object.keys(SYNTHESIZED_TIP_META) as SynthesizedTipPrimitive[]).map(
-                              (tp) => (
-                                <option key={tp} value={tp}>
-                                  {SYNTHESIZED_TIP_META[tp].label}
-                                </option>
-                              )
+                        const activeSlot = slots.find((s) => s.kind === activePartPicker);
+
+                        return (
+                          <div className="space-y-2">
+                            <div className="grid grid-cols-2 gap-1.5">
+                              {slots.map((slot) => {
+                                const isOpen = activePartPicker === slot.kind;
+                                return (
+                                  <button
+                                    key={slot.kind}
+                                    onClick={() =>
+                                      setActivePartPicker(isOpen ? null : slot.kind)
+                                    }
+                                    className={`${
+                                      slot.fullWidth ? 'col-span-2' : ''
+                                    } flex items-center gap-2 p-1.5 rounded-md border text-left transition-colors cursor-pointer ${
+                                      isOpen
+                                        ? 'bg-emerald-950/60 border-emerald-400'
+                                        : 'bg-[#0d141d] border-slate-700/80 hover:border-emerald-500/50'
+                                    }`}
+                                    title={`Elegir ${slot.title} visualmente`}
+                                  >
+                                    <PartVisualThumb
+                                      kind={slot.kind}
+                                      value={slot.value}
+                                      colorTrunk={params.colorTrunk}
+                                      colorMain={params.colorLeafMain}
+                                      colorTip={params.colorLeafTip}
+                                      colorFlower={params.colorFlower}
+                                      colorAccent={params.colorAccent}
+                                      size={32}
+                                    />
+                                    <div className="min-w-0 flex-1">
+                                      <div className="text-[9px] uppercase tracking-wider text-slate-400 font-semibold">
+                                        {slot.title}
+                                      </div>
+                                      <div className="text-[10px] text-slate-100 font-medium truncate">
+                                        {slot.label}
+                                      </div>
+                                    </div>
+                                    <span className="text-[10px] text-slate-400 shrink-0">
+                                      {isOpen ? '▴' : '▾'}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            {activePartPicker && activeSlot && (
+                              <div className="bg-[#0a1018] border border-emerald-500/45 rounded-lg p-2 space-y-1.5">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] font-semibold text-emerald-300">
+                                    Elige {activeSlot.title} ({pickerOptions[activePartPicker].length})
+                                  </span>
+                                  <button
+                                    onClick={() => setActivePartPicker(null)}
+                                    className="text-[10px] text-slate-400 hover:text-white cursor-pointer"
+                                  >
+                                    Cerrar ✕
+                                  </button>
+                                </div>
+                                <div className="grid grid-cols-3 gap-1.5 max-h-56 overflow-y-auto studio-scroll pr-0.5">
+                                  {pickerOptions[activePartPicker].map((opt) => {
+                                    const selected = activeSlot.value === opt.id;
+                                    return (
+                                      <button
+                                        key={opt.id}
+                                        onClick={() => {
+                                          if (activePartPicker === 'stem') {
+                                            updateCustomPart({ stemStructure: opt.id as StemStructureType });
+                                          } else if (activePartPicker === 'canopy') {
+                                            const nextCanopy = opt.id as CanopyElementType;
+                                            updateCustomPart({
+                                              canopyElement: nextCanopy,
+                                              synthesizedHeadTopology:
+                                                nextCanopy === 'procedural_lathe_head'
+                                                  ? 'revolved_lathe_chalice'
+                                                  : nextCanopy === 'custom_spline_leaf_crown'
+                                                  ? 'spline_petal_corona'
+                                                  : 'none',
+                                            });
+                                          } else if (activePartPicker === 'surface') {
+                                            updateCustomPart({ surfaceElement: opt.id as SurfaceElementType });
+                                          } else if (activePartPicker === 'hanging') {
+                                            updateCustomPart({ hangingElement: opt.id as HangingElementType });
+                                          } else if (activePartPicker === 'tip') {
+                                            updateCustomPart({ synthesizedTipPrimitive: opt.id as SynthesizedTipPrimitive });
+                                          } else if (activePartPicker === 'basal') {
+                                            updateCustomPart({ synthesizedBasalFoliage: opt.id as SynthesizedBasalFoliageType });
+                                          } else if (activePartPicker === 'bark') {
+                                            updateParam('barkType', opt.id as BarkType);
+                                          }
+                                        }}
+                                        className={`flex flex-col items-center gap-1 p-1.5 rounded border text-center cursor-pointer transition-colors ${
+                                          selected
+                                            ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200'
+                                            : 'bg-[#111926] border-slate-800 hover:border-slate-600 text-slate-300'
+                                        }`}
+                                        title={opt.label}
+                                      >
+                                        <PartVisualThumb
+                                          kind={activePartPicker}
+                                          value={opt.id}
+                                          colorTrunk={params.colorTrunk}
+                                          colorMain={params.colorLeafMain}
+                                          colorTip={params.colorLeafTip}
+                                          colorFlower={params.colorFlower}
+                                          colorAccent={params.colorAccent}
+                                          size={38}
+                                        />
+                                        <span className="text-[9px] leading-tight line-clamp-2 w-full">
+                                          {opt.label}
+                                        </span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
                             )}
-                          </select>
-                        </div>
-
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-[10px] text-emerald-300/90">Follaje Basal (IA):</span>
-                          <select
-                            value={params.customElement?.synthesizedBasalFoliage || 'none'}
-                            onChange={(e) =>
-                              updateCustomPart({
-                                synthesizedBasalFoliage: e.target.value as SynthesizedBasalFoliageType,
-                              })
-                            }
-                            className="bg-[#0d141d] border border-emerald-500/40 rounded px-1.5 py-1 text-[11px] text-emerald-100"
-                          >
-                            {(
-                              Object.keys(SYNTHESIZED_BASAL_META) as SynthesizedBasalFoliageType[]
-                            ).map((bf) => (
-                              <option key={bf} value={bf}>
-                                {SYNTHESIZED_BASAL_META[bf].label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div className="col-span-2 flex flex-col gap-0.5">
-                          <span className="text-[10px] text-amber-300/90">
-                            Shader / Corteza del Tronco ({Object.keys(BARK_TYPE_META).length} Shaders):
-                          </span>
-                          <select
-                            value={params.barkType}
-                            onChange={(e) => updateParam('barkType', e.target.value as BarkType)}
-                            className="bg-[#0d141d] border border-amber-500/40 rounded px-1.5 py-1 text-[11px] text-amber-100"
-                          >
-                            {(Object.keys(BARK_TYPE_META) as BarkType[]).map((bt) => (
-                              <option key={bt} value={bt}>
-                                {BARK_TYPE_META[bt].label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
+                          </div>
+                        );
+                      })()}
 
                       {params.customElement?.aiNewPartsReport && (
                         <div className="bg-emerald-950/40 border border-emerald-500/30 rounded px-2 py-1.5 text-[10px] text-emerald-200/90 leading-snug">
@@ -3011,327 +3320,995 @@ export default function App() {
                     </div>
                   </details>
 
-                  {/* 2. SLIDERS DE TRONCO, TALLOS Y RAMAS */}
-                  <details open className="bg-[#131d2b] border border-slate-800/90 rounded-lg overflow-hidden group">
-                    <summary className="px-3 py-2 bg-[#162130] cursor-pointer flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-emerald-400 select-none">
-                      <span>2. Sliders de Tronco, Tallos y Ramas</span>
+                  {/* 1B. CREADOR VISUAL DE NUEVAS PARTES (PERFIL REVOLUCIÓN & CURVA SPLINE PARA IA) */}
+                  <details className="bg-[#131d2b] border border-amber-500/40 rounded-lg overflow-hidden group">
+                    <summary className="px-3 py-2 bg-[#1a2232] cursor-pointer flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-amber-300 select-none">
+                      <span className="flex items-center gap-1.5">
+                        <Wand2 className="w-3.5 h-3.5 text-amber-400" />
+                        Creador Visual de Nuevas Partes (IA)
+                      </span>
                       <span className="text-[10px] text-slate-400 group-open:rotate-180 transition-transform">▾</span>
                     </summary>
-                    <div className="p-2.5 space-y-2">
-                      <SliderControl
-                        label="Altura Total del Espécimen"
-                        value={params.height}
-                        min={1.5}
-                        max={22}
-                        step={0.2}
-                        unit="m"
-                        onChange={(v) => updateParam('height', v)}
-                      />
-                      <SliderControl
-                        label="Grosor de Tronco / Tallos"
-                        value={params.radius}
-                        min={0.08}
-                        max={1.8}
-                        step={0.02}
-                        unit="m"
-                        onChange={(v) => updateParam('radius', v)}
-                      />
-                      <SliderControl
-                        label="Nº de Tallos / Ramas Principales"
-                        value={params.customElement?.stemCount ?? params.customElement?.spiralArms ?? 6}
-                        min={1}
-                        max={12}
-                        step={1}
-                        onChange={(v) => updateCustomPart({ stemCount: v, spiralArms: v })}
-                      />
-                      <SliderControl
-                        label="Curvatura en S del Tronco / Tallo"
-                        value={params.customElement?.trunkBentS ?? 0.35}
-                        min={0}
-                        max={1}
-                        step={0.05}
-                        onChange={(v) => updateCustomPart({ trunkBentS: v })}
-                      />
-                      <SliderControl
-                        label="Apertura / Extensión de Ramas"
-                        value={params.customElement?.branchSpread ?? 0.65}
-                        min={0.15}
-                        max={1.2}
-                        step={0.05}
-                        onChange={(v) => {
-                          updateParam('angle', Math.round(18 + v * 52));
-                          updateCustomPart({ branchSpread: v });
-                        }}
-                      />
-                      <SliderControl
-                        label="Caída Péndula de Ramas"
-                        value={params.customElement?.branchDroop ?? Math.max(0, -params.gravity)}
-                        min={0}
-                        max={1}
-                        step={0.05}
-                        onChange={(v) => {
-                          updateParam('gravity', -v * 0.55);
-                          updateCustomPart({ branchDroop: v });
-                        }}
-                      />
-                      <SliderControl
-                        label="Vueltas de Espiral / Voluta"
-                        value={params.customElement?.spiralTurns ?? 1.35}
-                        min={0.4}
-                        max={2.6}
-                        step={0.05}
-                        onChange={(v) => updateCustomPart({ spiralTurns: v })}
-                      />
-                      <SliderControl
-                        label="Torsión / Nudosidad de Corteza"
-                        value={params.gnarl}
-                        min={0}
-                        max={1}
-                        step={0.05}
-                        onChange={(v) => updateParam('gnarl', v)}
-                      />
-                    </div>
-                  </details>
+                    <div className="p-2.5 space-y-2.5">
+                      <p className="text-[10px] text-slate-400 leading-snug">
+                        Esculpe una silueta 3D nueva por <strong className="text-amber-200">Revolución</strong> o <strong className="text-emerald-200">Curva Spline</strong> y guárdala para que la IA la reutilice.
+                      </p>
 
-                  {/* 3. SLIDERS DE COPA, SOMBREROS FÚNGICOS, FLORES, PÉTALOS Y HOJAS */}
-                  <details open className="bg-[#131d2b] border border-slate-800/90 rounded-lg overflow-hidden group">
-                    <summary className="px-3 py-2 bg-[#162130] cursor-pointer flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-emerald-400 select-none">
-                      <span>3. Sliders de Sombreros, Pétalos y Hojas</span>
-                      <span className="text-[10px] text-slate-400 group-open:rotate-180 transition-transform">▾</span>
-                    </summary>
-                    <div className="p-2.5 space-y-2">
-                      <SliderControl
-                        label="Tamaño de Sombrero / Flor / Hoja"
-                        value={params.leafScale}
-                        min={0.35}
-                        max={2.6}
-                        step={0.05}
-                        unit="×"
-                        onChange={(v) => updateParam('leafScale', v)}
-                      />
-                      <SliderControl
-                        label="Densidad de Copa / Follaje"
-                        value={params.leafDensity}
-                        min={1}
-                        max={8}
-                        step={1}
-                        onChange={(v) => updateParam('leafDensity', v)}
-                      />
-                      <SliderControl
-                        label="Radios de Umbela Esférica (IA)"
-                        value={params.customElement?.umbelRayCount ?? 64}
-                        min={16}
-                        max={110}
-                        step={2}
-                        onChange={(v) => updateCustomPart({ umbelRayCount: v })}
-                      />
-                      <SliderControl
-                        label="Esfericidad 3D de Umbela"
-                        value={params.customElement?.umbelSphereRatio ?? 0.94}
-                        min={0.25}
-                        max={1.0}
-                        step={0.02}
-                        onChange={(v) => updateCustomPart({ umbelSphereRatio: v })}
-                      />
-                      <SliderControl
-                        label="Tamaño de Burbujas / Puntas (IA)"
-                        value={params.customElement?.tipBubbleScale ?? 1.15}
-                        min={0.4}
-                        max={2.2}
-                        step={0.05}
-                        unit="×"
-                        onChange={(v) => updateCustomPart({ tipBubbleScale: v })}
-                      />
-                      <SliderControl
-                        label="Iridiscencia Multicolor (Espectro)"
-                        value={params.customElement?.iridescentShift ?? 0.85}
-                        min={0}
-                        max={1}
-                        step={0.05}
-                        onChange={(v) => updateCustomPart({ iridescentShift: v })}
-                      />
-                      <SliderControl
-                        label="Nº Hojas Basales (IA)"
-                        value={params.customElement?.basalLeafCount ?? 14}
-                        min={0}
-                        max={28}
-                        step={1}
-                        onChange={(v) => updateCustomPart({ basalLeafCount: v })}
-                      />
-                      <SliderControl
-                        label="Longitud Hojas Basales"
-                        value={params.customElement?.basalLeafLength ?? 1.15}
-                        min={0.4}
-                        max={2.2}
-                        step={0.05}
-                        unit="×"
-                        onChange={(v) => updateCustomPart({ basalLeafLength: v })}
-                      />
-                      <SliderControl
-                        label="Abombamiento de Domo / Sombrero"
-                        value={params.customElement?.capDomeHeight ?? 0.62}
-                        min={0.15}
-                        max={1.25}
-                        step={0.05}
-                        onChange={(v) => updateCustomPart({ capDomeHeight: v })}
-                      />
-                      <SliderControl
-                        label="Motas / Verrugas 3D en Sombrero"
-                        value={params.customElement?.capSpotDensity ?? 0.65}
-                        min={0}
-                        max={1}
-                        step={0.05}
-                        onChange={(v) => updateCustomPart({ capSpotDensity: v })}
-                      />
-                      <SliderControl
-                        label="Nº de Laminillas Inferiores (Hongo)"
-                        value={params.customElement?.gillCount ?? 22}
-                        min={8}
-                        max={36}
-                        step={2}
-                        onChange={(v) => updateCustomPart({ gillCount: v })}
-                      />
-                      <SliderControl
-                        label="Apertura de Pétalos / Corola"
-                        value={params.customElement?.petalOpenness ?? 0.45}
-                        min={0.05}
-                        max={1}
-                        step={0.05}
-                        onChange={(v) => updateCustomPart({ petalOpenness: v })}
-                      />
-                      <SliderControl
-                        label="Nº de Pétalos / Lóbulos de Hoja"
-                        value={params.customElement?.lobeCount ?? 6}
-                        min={3}
-                        max={12}
-                        step={1}
-                        onChange={(v) => updateCustomPart({ lobeCount: v })}
-                      />
-                      <SliderControl
-                        label="Concavidad de Copa / Flor"
-                        value={params.customElement?.cupDepth ?? 0.45}
-                        min={0.05}
-                        max={0.95}
-                        step={0.05}
-                        onChange={(v) => updateCustomPart({ cupDepth: v })}
-                      />
-                      <SliderControl
-                        label="Aserrado de Borde de Hoja"
-                        value={params.customElement?.leafSerration ?? 0.35}
-                        min={0}
-                        max={1}
-                        step={0.05}
-                        onChange={(v) => updateCustomPart({ leafSerration: v })}
-                      />
-                      <SliderControl
-                        label="Capas de Almohadillas / Nubes"
-                        value={params.customElement?.padLayers ?? 6}
-                        min={2}
-                        max={12}
-                        step={1}
-                        onChange={(v) => updateCustomPart({ padLayers: v })}
-                      />
-                      <SliderControl
-                        label="Ancho de Lámina Foliar"
-                        value={params.leafWidthRatio}
-                        min={0.2}
-                        max={1.2}
-                        step={0.05}
-                        onChange={(v) => updateParam('leafWidthRatio', v)}
-                      />
-                      <SliderControl
-                        label="Curvatura / Arco de Hoja"
-                        value={params.leafBend}
-                        min={0}
-                        max={0.9}
-                        step={0.05}
-                        onChange={(v) => updateParam('leafBend', v)}
-                      />
-                    </div>
-                  </details>
-
-                  {/* 4. SLIDERS DE FILAMENTOS COLGANTES, ESPINAS Y RAÍCES */}
-                  <details open className="bg-[#131d2b] border border-slate-800/90 rounded-lg overflow-hidden group">
-                    <summary className="px-3 py-2 bg-[#162130] cursor-pointer flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-emerald-400 select-none">
-                      <span>4. Filamentos, Espinas y Raíces</span>
-                      <span className="text-[10px] text-slate-400 group-open:rotate-180 transition-transform">▾</span>
-                    </summary>
-                    <div className="p-2.5 space-y-2">
-                      <SliderControl
-                        label="Cantidad de Filamentos / Zarcillos"
-                        value={params.customElement?.filamentCount ?? 22}
-                        min={0}
-                        max={48}
-                        step={2}
-                        onChange={(v) => updateCustomPart({ filamentCount: v })}
-                      />
-                      <SliderControl
-                        label="Longitud de Filamentos Colgantes"
-                        value={params.customElement?.filamentLength ?? 1.15}
-                        min={0.2}
-                        max={2.5}
-                        step={0.05}
-                        unit="×"
-                        onChange={(v) => updateCustomPart({ filamentLength: v })}
-                      />
-                      <SliderControl
-                        label="Densidad de Espinas / Aguijones"
-                        value={params.customElement?.thornDensity ?? 0.2}
-                        min={0}
-                        max={1}
-                        step={0.05}
-                        onChange={(v) => updateCustomPart({ thornDensity: v })}
-                      />
-                      <SliderControl
-                        label="Longitud de Espinas"
-                        value={params.customElement?.thornLength ?? 0.85}
-                        min={0.2}
-                        max={2.2}
-                        step={0.05}
-                        unit="×"
-                        onChange={(v) => updateCustomPart({ thornLength: v })}
-                      />
-                      <div className="pt-1 border-t border-slate-800/80 flex items-center justify-between">
-                        <span className="text-[11px] text-slate-300">Raíces Superficiales Visibles</span>
-                        <input
-                          type="checkbox"
-                          checked={params.showRoots}
-                          onChange={(e) => updateParam('showRoots', e.target.checked)}
-                          className="accent-emerald-400 cursor-pointer"
-                        />
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button
+                          onClick={() =>
+                            updateCustomPart({
+                              canopyElement: 'procedural_lathe_head',
+                              synthesizedHeadTopology: 'revolved_lathe_chalice',
+                              latheProfileRadii:
+                                params.customElement?.latheProfileRadii?.length &&
+                                params.customElement.latheProfileRadii.length >= 4
+                                  ? params.customElement.latheProfileRadii
+                                  : [0.16, 0.68, 0.88, 0.56, 0.78, 0.92],
+                            })
+                          }
+                          className={`py-1 px-2 rounded text-[10px] font-semibold border cursor-pointer ${
+                            params.customElement?.canopyElement === 'procedural_lathe_head'
+                              ? 'bg-amber-500 text-slate-950 border-amber-400'
+                              : 'bg-[#0d141d] text-amber-200 border-amber-500/35 hover:border-amber-400'
+                          }`}
+                        >
+                          Modo Revolución 3D
+                        </button>
+                        <button
+                          onClick={() =>
+                            updateCustomPart({
+                              canopyElement: 'custom_spline_leaf_crown',
+                              synthesizedHeadTopology: 'spline_petal_corona',
+                              petalContourProfile:
+                                params.customElement?.petalContourProfile?.length &&
+                                params.customElement.petalContourProfile.length >= 4
+                                  ? params.customElement.petalContourProfile
+                                  : [0.14, 0.62, 0.98, 0.72, 0.94, 0.42, 0.08],
+                            })
+                          }
+                          className={`py-1 px-2 rounded text-[10px] font-semibold border cursor-pointer ${
+                            params.customElement?.canopyElement === 'custom_spline_leaf_crown'
+                              ? 'bg-emerald-500 text-slate-950 border-emerald-400'
+                              : 'bg-[#0d141d] text-emerald-200 border-emerald-500/35 hover:border-emerald-400'
+                          }`}
+                        >
+                          Modo Hoja / Pétalo Spline
+                        </button>
                       </div>
-                      {params.showRoots && (
-                        <>
-                          <SliderControl
-                            label="Número de Raíces Principales"
-                            value={params.rootCount ?? 5}
-                            min={2}
-                            max={14}
-                            step={1}
-                            onChange={(v) => updateParam('rootCount', v)}
-                          />
-                          <SliderControl
-                            label="Extensión Radial de Raíces"
-                            value={params.rootLength ?? 1.2}
-                            min={0.6}
-                            max={4.5}
-                            step={0.1}
-                            unit="m"
-                            onChange={(v) => updateParam('rootLength', v)}
-                          />
-                          <SliderControl
-                            label="Grosor de Raíces"
-                            value={params.rootThickness ?? 1.0}
-                            min={0.25}
-                            max={1.5}
-                            step={0.05}
-                            unit="×"
-                            onChange={(v) => updateParam('rootThickness', v)}
-                          />
-                        </>
+
+                      {params.customElement?.canopyElement === 'custom_spline_leaf_crown' ? (
+                        (() => {
+                          const contour =
+                            Array.isArray(params.customElement?.petalContourProfile) &&
+                            params.customElement.petalContourProfile.length >= 4
+                              ? params.customElement.petalContourProfile
+                              : [0.14, 0.62, 0.98, 0.72, 0.94, 0.42, 0.08];
+                          const rightPts = contour
+                            .map((w, idx) => {
+                              const y = 92 - (idx / (contour.length - 1)) * 84;
+                              const x = 60 + Math.min(1.4, Math.max(0.02, w)) * 36;
+                              return `${x.toFixed(1)},${y.toFixed(1)}`;
+                            })
+                            .join(' ');
+                          const leftPts = [...contour]
+                            .reverse()
+                            .map((w, rIdx) => {
+                              const idx = contour.length - 1 - rIdx;
+                              const y = 92 - (idx / (contour.length - 1)) * 84;
+                              const x = 60 - Math.min(1.4, Math.max(0.02, w)) * 36;
+                              return `${x.toFixed(1)},${y.toFixed(1)}`;
+                            })
+                            .join(' ');
+
+                          return (
+                            <div className="space-y-2 bg-[#0d141d] border border-emerald-500/30 rounded p-2">
+                              <div className="flex items-center gap-2">
+                                <svg
+                                  viewBox="0 0 120 100"
+                                  className="w-20 h-16 bg-[#080d14] rounded border border-slate-800 shrink-0"
+                                >
+                                  <line x1="60" y1="6" x2="60" y2="94" stroke="#1e293b" strokeDasharray="2 2" />
+                                  <polygon
+                                    points={`${rightPts} ${leftPts}`}
+                                    fill="rgba(16, 185, 129, 0.28)"
+                                    stroke="#34d399"
+                                    strokeWidth="1.5"
+                                  />
+                                </svg>
+                                <div className="flex-1 grid grid-cols-2 gap-1 text-[9px]">
+                                  {[
+                                    { label: 'Orquídea', pts: [0.16, 0.75, 1.15, 0.62, 1.08, 0.52, 0.1] },
+                                    { label: 'Lanza', pts: [0.08, 0.42, 0.72, 0.68, 0.48, 0.24, 0.04] },
+                                    { label: 'Corazón', pts: [0.22, 0.95, 1.12, 0.88, 0.56, 0.26, 0.05] },
+                                    { label: 'Garra', pts: [0.45, 0.65, 0.48, 0.34, 0.22, 0.12, 0.03] },
+                                  ].map((tpl) => (
+                                    <button
+                                      key={tpl.label}
+                                      onClick={() =>
+                                        updateCustomPart({
+                                          canopyElement: 'custom_spline_leaf_crown',
+                                          synthesizedHeadTopology: 'spline_petal_corona',
+                                          petalContourProfile: tpl.pts,
+                                        })
+                                      }
+                                      className="px-1.5 py-1 rounded bg-slate-800 hover:bg-emerald-950 border border-slate-700 text-emerald-200 cursor-pointer"
+                                    >
+                                      {tpl.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+
+                              <div className="space-y-1">
+                                <div className="text-[9px] text-slate-400">Anchura de contorno (Base → Punta):</div>
+                                <div className="grid grid-cols-7 gap-1">
+                                  {contour.map((val, idx) => (
+                                    <div key={idx} className="flex flex-col items-center gap-0.5">
+                                      <input
+                                        type="range"
+                                        min={0.04}
+                                        max={1.35}
+                                        step={0.04}
+                                        value={val}
+                                        onChange={(e) => {
+                                          const next = [...contour];
+                                          next[idx] = parseFloat(e.target.value);
+                                          updateCustomPart({
+                                            canopyElement: 'custom_spline_leaf_crown',
+                                            synthesizedHeadTopology: 'spline_petal_corona',
+                                            petalContourProfile: next,
+                                          });
+                                        }}
+                                        className="w-full accent-emerald-400 cursor-pointer"
+                                        title={`Punto ${idx + 1}: ${val.toFixed(2)}`}
+                                      />
+                                      <span className="text-[8px] font-mono text-emerald-300">
+                                        {val.toFixed(1)}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+
+                              <SliderControl
+                                label="Acopamiento / Concavidad"
+                                value={params.customElement?.petalCupping ?? 0.38}
+                                min={-0.6}
+                                max={0.95}
+                                step={0.05}
+                                onChange={(v) => updateCustomPart({ petalCupping: v })}
+                              />
+                              <SliderControl
+                                label="Torsión Helicoidal"
+                                value={params.customElement?.petalTwistDeg ?? 14}
+                                min={0}
+                                max={90}
+                                step={2}
+                                unit="°"
+                                onChange={(v) => updateCustomPart({ petalTwistDeg: v })}
+                              />
+                              <SliderControl
+                                label="Ondulación del Borde"
+                                value={params.customElement?.petalMarginWave ?? 0.16}
+                                min={0}
+                                max={0.5}
+                                step={0.02}
+                                onChange={(v) => updateCustomPart({ petalMarginWave: v })}
+                              />
+                            </div>
+                          );
+                        })()
+                      ) : (
+                        (() => {
+                          const radii =
+                            Array.isArray(params.customElement?.latheProfileRadii) &&
+                            params.customElement.latheProfileRadii.length >= 4
+                              ? params.customElement.latheProfileRadii
+                              : [0.16, 0.68, 0.88, 0.56, 0.78, 0.92];
+                          const rightPts = radii
+                            .map((r, idx) => {
+                              const y = 92 - (idx / (radii.length - 1)) * 84;
+                              const x = 60 + Math.min(1.3, Math.max(0.08, r)) * 38;
+                              return `${x.toFixed(1)},${y.toFixed(1)}`;
+                            })
+                            .join(' ');
+                          const leftPts = [...radii]
+                            .reverse()
+                            .map((r, rIdx) => {
+                              const idx = radii.length - 1 - rIdx;
+                              const y = 92 - (idx / (radii.length - 1)) * 84;
+                              const x = 60 - Math.min(1.3, Math.max(0.08, r)) * 38;
+                              return `${x.toFixed(1)},${y.toFixed(1)}`;
+                            })
+                            .join(' ');
+
+                          return (
+                            <div className="space-y-2 bg-[#0d141d] border border-amber-500/30 rounded p-2">
+                              <div className="flex items-center gap-2">
+                                <svg
+                                  viewBox="0 0 120 100"
+                                  className="w-20 h-16 bg-[#080d14] rounded border border-slate-800 shrink-0"
+                                >
+                                  <line x1="60" y1="6" x2="60" y2="94" stroke="#1e293b" strokeDasharray="2 2" />
+                                  <polygon
+                                    points={`${rightPts} ${leftPts}`}
+                                    fill="rgba(245, 158, 11, 0.25)"
+                                    stroke="#fbbf24"
+                                    strokeWidth="1.5"
+                                  />
+                                </svg>
+                                <div className="flex-1 grid grid-cols-2 gap-1 text-[9px]">
+                                  {[
+                                    { label: 'Cáliz', pts: [0.16, 0.68, 0.88, 0.56, 0.78, 0.92] },
+                                    { label: 'Cono Espira', pts: [0.95, 0.76, 0.58, 0.4, 0.24, 0.1] },
+                                    { label: 'Campana', pts: [0.98, 0.74, 0.52, 0.42, 0.34, 0.14] },
+                                    { label: 'Odre / Bulbo', pts: [0.22, 0.92, 1.05, 0.78, 0.42, 0.55] },
+                                  ].map((tpl) => (
+                                    <button
+                                      key={tpl.label}
+                                      onClick={() =>
+                                        updateCustomPart({
+                                          canopyElement: 'procedural_lathe_head',
+                                          synthesizedHeadTopology: 'revolved_lathe_chalice',
+                                          latheProfileRadii: tpl.pts,
+                                        })
+                                      }
+                                      className="px-1.5 py-1 rounded bg-slate-800 hover:bg-amber-950 border border-slate-700 text-amber-200 cursor-pointer"
+                                    >
+                                      {tpl.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+
+                              <div className="space-y-1">
+                                <div className="text-[9px] text-slate-400">Radios de revolución (Base → Borde):</div>
+                                <div className="grid grid-cols-6 gap-1">
+                                  {radii.map((val, idx) => (
+                                    <div key={idx} className="flex flex-col items-center gap-0.5">
+                                      <input
+                                        type="range"
+                                        min={0.08}
+                                        max={1.3}
+                                        step={0.04}
+                                        value={val}
+                                        onChange={(e) => {
+                                          const next = [...radii];
+                                          next[idx] = parseFloat(e.target.value);
+                                          updateCustomPart({
+                                            canopyElement: 'procedural_lathe_head',
+                                            synthesizedHeadTopology: 'revolved_lathe_chalice',
+                                            latheProfileRadii: next,
+                                          });
+                                        }}
+                                        className="w-full accent-amber-400 cursor-pointer"
+                                        title={`Radio ${idx + 1}: ${val.toFixed(2)}`}
+                                      />
+                                      <span className="text-[8px] font-mono text-amber-300">
+                                        {val.toFixed(1)}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()
                       )}
+
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          value={newPartNameInput}
+                          onChange={(e) => setNewPartNameInput(e.target.value)}
+                          placeholder="Nombre de esta nueva parte..."
+                          className="flex-1 min-w-0 bg-[#0d141d] border border-slate-700 rounded px-2 py-1 text-[10px] text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-amber-400"
+                        />
+                        <button
+                          onClick={() => {
+                            const currentElem: CustomBotanicalElement = params.customElement || {
+                              id: `elem_custom_${Date.now()}`,
+                              name: `Parte Revolución #${params.seed}`,
+                              scientificName: 'Botanica modularis sp.',
+                              description: 'Silueta esculpida con el Creador Visual de Partes.',
+                              createdAt: Date.now(),
+                              stemStructure: 'herbaceous_curved_stalk',
+                              canopyElement: 'procedural_lathe_head',
+                              surfaceElement: 'smooth_striated',
+                              hangingElement: 'none',
+                              synthesizedHeadTopology: 'revolved_lathe_chalice',
+                              latheProfileRadii: [0.16, 0.68, 0.88, 0.56, 0.78, 0.92],
+                              lobeCount: 6,
+                              cupDepth: 0.45,
+                              spiralTurns: 1.25,
+                              spiralArms: 6,
+                              stemCount: 1,
+                              trunkBentS: 0.25,
+                              branchSpread: 0.55,
+                              branchDroop: 0.15,
+                              capDomeHeight: 0.56,
+                              capSpotDensity: 0.5,
+                              gillCount: 20,
+                              petalOpenness: 0.45,
+                              leafSerration: 0.35,
+                              thornDensity: 0.1,
+                              thornLength: 0.8,
+                              filamentCount: 12,
+                              filamentLength: 1.0,
+                              padLayers: 6,
+                            };
+                            const isSpline = currentElem.canopyElement === 'custom_spline_leaf_crown';
+                            const finalName =
+                              newPartNameInput.trim() ||
+                              `${isSpline ? 'Hoja Spline' : 'Cáliz Revolución'} #${params.seed}`;
+                            const toSave: CustomBotanicalElement = {
+                              ...currentElem,
+                              id: `elem_user_${Date.now()}`,
+                              name: finalName,
+                              createdAt: Date.now(),
+                            };
+                            setCustomElements(saveCustomElementToApp(toSave));
+                            setSavedPartModules(saveCustomPartModule(finalName, 'canopy', toSave));
+                            setNewPartNameInput('');
+                            updateParam('engine', 'composed_custom');
+                            updateParam('foliageType', 'ai_custom_element');
+                            updateParam('customElement', toSave);
+                            showTempNotice(`Nueva parte "${finalName}" guardada para la IA`);
+                          }}
+                          className="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/35 border border-amber-400/50 text-amber-200 text-[10px] font-semibold cursor-pointer shrink-0"
+                        >
+                          + Guardar para IA
+                        </button>
+                      </div>
                     </div>
                   </details>
+
+                  {/* 2, 3 y 4: SLIDERS CONTEXTUALES — SOLO LOS ÚTILES PARA LA ESPECIE EN EL VISOR */}
+                  {(() => {
+                    const isComposed = params.engine === 'composed_custom';
+                    const isCactus = params.engine === 'cactus';
+                    const isConifer = params.engine === 'monopodial';
+                    const isMossFungiEngine = params.engine === 'moss_fungi_rock';
+                    const isAquatic = params.engine === 'aquatic_coral_algae';
+                    const isTreeLike = ['sympodial', 'monopodial', 'weeping', 'palm', 'shrub', 'bamboo'].includes(params.engine);
+
+                    const stem = params.customElement?.stemStructure || 'multi_stalk_umbel_colony';
+                    const canopy = params.customElement?.canopyElement || 'custom_fungi_cap';
+                    const surface = params.customElement?.surfaceElement || 'smooth_striated';
+                    const hanging = params.customElement?.hangingElement || 'none';
+                    const basal = params.customElement?.synthesizedBasalFoliage || 'none';
+                    const headTopo = params.customElement?.synthesizedHeadTopology || 'none';
+
+                    const showMultiStemSlider =
+                      isComposed && !['herbaceous_curved_stalk', 'baobab_pachycaul_bottle'].includes(stem);
+                    const showSCurveSlider =
+                      isComposed && !['rosette_cluster', 'segmented_bamboo_equisetum'].includes(stem);
+                    const showBranchSpreadSlider =
+                      isComposed && !['rosette_cluster', 'creeping_rhizome_runners'].includes(stem);
+                    const showDroopSlider =
+                      isComposed && ['weeping_willow', 'sympodial_tree', 'mangrove_stilt_arch', 'dichotomous_dragon_tree'].includes(stem);
+                    const showSpiralSlider =
+                      isComposed && (stem === 'spiral_volute_vine' || stem === 'braided_helix_trunks' || surface === 'braided_vines' || hanging === 'curling_tendrils');
+                    const showGnarlSlider =
+                      isTreeLike || (isComposed && !['herbaceous_curved_stalk', 'segmented_bamboo_equisetum'].includes(stem));
+
+                    const showFungiSliders = isComposed && canopy === 'custom_fungi_cap';
+                    const showUmbelOrSciFiSliders =
+                      isComposed &&
+                      (canopy === 'spherical_bubble_umbel' ||
+                        headTopo === 'spherical_umbel_rays' ||
+                        canopy === 'scifi_biolum_plasma_globes' ||
+                        canopy === 'scifi_voronoi_ova_balloons');
+                    const showBasalSliders = isComposed && basal !== 'none';
+                    const showFlowerSliders =
+                      isComposed &&
+                      [
+                        'custom_flower_corolla',
+                        'radiating_floret_head',
+                        'lotus_magnolia_corolla_crown',
+                        'passionflower_filament_corona',
+                        'heliconia_bract_candelabra',
+                        'custom_spline_leaf_crown',
+                        'hanging_bell_cluster',
+                        'crystal_prism_crown',
+                        'succulent_fleshy_rosettes',
+                      ].includes(canopy);
+                    const showLeafShapeSliders =
+                      (isTreeLike && params.foliageType !== 'none') ||
+                      (isComposed &&
+                        [
+                          'custom_leaf_lamina',
+                          'stem_hugging_leaves',
+                          'fenestrated_monstera_leaves',
+                          'palmate_maple_star_leaves',
+                          'pinnate_fern_palm_fronds',
+                          'custom_spline_leaf_crown',
+                        ].includes(canopy));
+                    const showPadLayerSlider =
+                      isComposed &&
+                      ['cloud_bonsai_pads', 'succulent_fleshy_rosettes', 'lotus_magnolia_corolla_crown', 'custom_spline_leaf_crown'].includes(canopy);
+
+                    const showFilamentSliders =
+                      isComposed &&
+                      (hanging !== 'none' || canopy === 'custom_fungi_cap' || canopy === 'passionflower_filament_corona');
+                    const showThornSliders =
+                      isComposed &&
+                      (['curved_thorns_spines', 'rose_hooked_prickles', 'cactus_areole_spine_bursts'].includes(surface) ||
+                        canopy === 'thorn_spur_clusters' ||
+                        stem === 'thorny_horn_crown' ||
+                        hanging === 'thorny_barbed_whips');
+
+                    const showRootsControls =
+                      !['moss_fungi_rock', 'aquatic_coral_algae', 'cactus', 'rosette', 'bamboo'].includes(params.engine);
+                    const showSection4 = showFilamentSliders || showThornSliders || showRootsControls;
+
+                    return (
+                      <>
+                        {/* 2. SLIDERS DE TRONCO, TALLOS Y RAMAS / ROCA */}
+                        <details
+                          ref={trunkSectionRef}
+                          open
+                          className={`bg-[#131d2b] border rounded-lg overflow-hidden group transition-all ${
+                            highlightedPart === 'trunk'
+                              ? 'border-emerald-400 ring-2 ring-emerald-400/70 shadow-lg'
+                              : 'border-slate-800/90'
+                          }`}
+                        >
+                          <summary className="px-3 py-2 bg-[#162130] cursor-pointer flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-emerald-400 select-none">
+                            <span>
+                              {isMossFungiEngine
+                                ? '2. Roca 3D, Musgo y Colonia'
+                                : isAquatic
+                                ? '2. Arrecife, Corales y Frondas'
+                                : '2. Tronco, Tallos y Ramas'}
+                            </span>
+                            <span className="text-[10px] text-slate-400 group-open:rotate-180 transition-transform">▾</span>
+                          </summary>
+                          <div className="p-2.5 space-y-2">
+                            {!isMossFungiEngine && (
+                              <>
+                                <SliderControl
+                                  label="Altura Total del Espécimen"
+                                  value={params.height}
+                                  min={1.5}
+                                  max={22}
+                                  step={0.2}
+                                  unit="m"
+                                  onChange={(v) => updateParam('height', v)}
+                                />
+                                <SliderControl
+                                  label="Grosor de Tronco / Tallos"
+                                  value={params.radius}
+                                  min={0.08}
+                                  max={1.8}
+                                  step={0.02}
+                                  unit="m"
+                                  onChange={(v) => updateParam('radius', v)}
+                                />
+                              </>
+                            )}
+                            {isTreeLike && (
+                              <>
+                                <SliderControl
+                                  label="Nº de Ramas por Nivel"
+                                  value={params.branchCount}
+                                  min={2}
+                                  max={9}
+                                  step={1}
+                                  onChange={(v) => updateParam('branchCount', v)}
+                                />
+                                <SliderControl
+                                  label="Ángulo de Ramificación"
+                                  value={params.angle}
+                                  min={15}
+                                  max={82}
+                                  step={1}
+                                  unit="°"
+                                  onChange={(v) => updateParam('angle', v)}
+                                />
+                              </>
+                            )}
+                            {isCactus && (
+                              <>
+                                <SliderControl
+                                  label="Costillas del Cactus"
+                                  value={params.cactusRibs}
+                                  min={6}
+                                  max={24}
+                                  step={1}
+                                  onChange={(v) => updateParam('cactusRibs', v)}
+                                />
+                                <SliderControl
+                                  label="Brazos del Cactus"
+                                  value={params.armCount}
+                                  min={0}
+                                  max={10}
+                                  step={1}
+                                  onChange={(v) => updateParam('armCount', v)}
+                                />
+                                <SliderControl
+                                  label="Espinas por Aréola"
+                                  value={params.spinesPerAreole}
+                                  min={0}
+                                  max={14}
+                                  step={1}
+                                  onChange={(v) => updateParam('spinesPerAreole', v)}
+                                />
+                              </>
+                            )}
+                            {isMossFungiEngine && (
+                              <>
+                                <SliderControl
+                                  label="Escala de Roca Base"
+                                  value={params.rockScale ?? 1.0}
+                                  min={0.5}
+                                  max={1.8}
+                                  step={0.05}
+                                  unit="×"
+                                  onChange={(v) => updateParam('rockScale', v)}
+                                />
+                                <SliderControl
+                                  label="Rugosidad & Estratos de Roca"
+                                  value={params.rockRoughness ?? 0.65}
+                                  min={0.15}
+                                  max={1.3}
+                                  step={0.05}
+                                  onChange={(v) => updateParam('rockRoughness', v)}
+                                />
+                                <SliderControl
+                                  label="Cobertura de Musgo"
+                                  value={params.mossCoverage ?? 0.75}
+                                  min={0.1}
+                                  max={1}
+                                  step={0.05}
+                                  onChange={(v) => updateParam('mossCoverage', v)}
+                                />
+                                <SliderControl
+                                  label="Cantidad de Hongos / Esporofitos"
+                                  value={params.branchCount}
+                                  min={1}
+                                  max={12}
+                                  step={1}
+                                  onChange={(v) => updateParam('branchCount', v)}
+                                />
+                              </>
+                            )}
+                            {isAquatic && (
+                              <>
+                                <SliderControl
+                                  label="Ramas / Tubos / Frondas"
+                                  value={params.branchCount}
+                                  min={2}
+                                  max={10}
+                                  step={1}
+                                  onChange={(v) => updateParam('branchCount', v)}
+                                />
+                                <SliderControl
+                                  label="Tamaño de Pólipos / Frondas"
+                                  value={params.leafScale}
+                                  min={0.5}
+                                  max={2.2}
+                                  step={0.05}
+                                  unit="×"
+                                  onChange={(v) => updateParam('leafScale', v)}
+                                />
+                                <SliderControl
+                                  label="Escala de Roca Arrecifal"
+                                  value={params.rockScale ?? 1.0}
+                                  min={0.5}
+                                  max={1.8}
+                                  step={0.05}
+                                  unit="×"
+                                  onChange={(v) => updateParam('rockScale', v)}
+                                />
+                                <SliderControl
+                                  label="Ondulación Corriente Marina"
+                                  value={params.gnarl}
+                                  min={0}
+                                  max={0.8}
+                                  step={0.05}
+                                  onChange={(v) => updateParam('gnarl', v)}
+                                />
+                              </>
+                            )}
+                            {showMultiStemSlider && (
+                              <SliderControl
+                                label="Nº de Tallos / Ramas Principales"
+                                value={params.customElement?.stemCount ?? params.customElement?.spiralArms ?? 6}
+                                min={1}
+                                max={12}
+                                step={1}
+                                onChange={(v) => updateCustomPart({ stemCount: v, spiralArms: v })}
+                              />
+                            )}
+                            {showSCurveSlider && (
+                              <SliderControl
+                                label="Curvatura en S del Tronco / Tallo"
+                                value={params.customElement?.trunkBentS ?? 0.35}
+                                min={0}
+                                max={1}
+                                step={0.05}
+                                onChange={(v) => updateCustomPart({ trunkBentS: v })}
+                              />
+                            )}
+                            {showBranchSpreadSlider && (
+                              <SliderControl
+                                label="Apertura / Extensión de Ramas"
+                                value={params.customElement?.branchSpread ?? 0.65}
+                                min={0.15}
+                                max={1.2}
+                                step={0.05}
+                                onChange={(v) => {
+                                  updateParam('angle', Math.round(18 + v * 52));
+                                  updateCustomPart({ branchSpread: v });
+                                }}
+                              />
+                            )}
+                            {showDroopSlider && (
+                              <SliderControl
+                                label="Caída Péndula de Ramas"
+                                value={params.customElement?.branchDroop ?? Math.max(0, -params.gravity)}
+                                min={0}
+                                max={1}
+                                step={0.05}
+                                onChange={(v) => {
+                                  updateParam('gravity', -v * 0.55);
+                                  updateCustomPart({ branchDroop: v });
+                                }}
+                              />
+                            )}
+                            {showSpiralSlider && (
+                              <SliderControl
+                                label="Vueltas de Espiral / Voluta"
+                                value={params.customElement?.spiralTurns ?? 1.35}
+                                min={0.4}
+                                max={2.6}
+                                step={0.05}
+                                onChange={(v) => updateCustomPart({ spiralTurns: v })}
+                              />
+                            )}
+                            {showGnarlSlider && (
+                              <SliderControl
+                                label="Torsión / Nudosidad de Corteza"
+                                value={params.gnarl}
+                                min={0}
+                                max={1}
+                                step={0.05}
+                                onChange={(v) => updateParam('gnarl', v)}
+                              />
+                            )}
+                          </div>
+                        </details>
+
+                        {/* 3. SLIDERS CONTEXTUALES DE COPA, FLORES U HOJAS */}
+                        {!isCactus && !isAquatic && (
+                          <details
+                            ref={canopySectionRef}
+                            open
+                            className={`bg-[#131d2b] border rounded-lg overflow-hidden group transition-all ${
+                              highlightedPart === 'canopy'
+                                ? 'border-emerald-400 ring-2 ring-emerald-400/70 shadow-lg'
+                                : 'border-slate-800/90'
+                            }`}
+                          >
+                            <summary className="px-3 py-2 bg-[#162130] cursor-pointer flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-emerald-400 select-none">
+                              <span>3. Copa, Flores y Hojas</span>
+                              <span className="text-[10px] text-slate-400 group-open:rotate-180 transition-transform">▾</span>
+                            </summary>
+                            <div className="p-2.5 space-y-2">
+                              <SliderControl
+                                label="Tamaño de Copa / Flor / Hoja"
+                                value={params.leafScale}
+                                min={0.35}
+                                max={2.6}
+                                step={0.05}
+                                unit="×"
+                                onChange={(v) => updateParam('leafScale', v)}
+                              />
+                              <SliderControl
+                                label="Densidad de Copa / Follaje"
+                                value={params.leafDensity}
+                                min={1}
+                                max={8}
+                                step={1}
+                                onChange={(v) => updateParam('leafDensity', v)}
+                              />
+                              {isConifer && (
+                                <>
+                                  <SliderControl
+                                    label="Longitud de Acículas"
+                                    value={params.needleLength}
+                                    min={0.4}
+                                    max={2.0}
+                                    step={0.05}
+                                    unit="×"
+                                    onChange={(v) => updateParam('needleLength', v)}
+                                  />
+                                  <SliderControl
+                                    label="Densidad de Piñas"
+                                    value={params.pineConeDensity}
+                                    min={0}
+                                    max={1}
+                                    step={0.05}
+                                    onChange={(v) => updateParam('pineConeDensity', v)}
+                                  />
+                                </>
+                              )}
+                              {showUmbelOrSciFiSliders && (
+                                <>
+                                  <SliderControl
+                                    label="Radios de Umbela Esférica"
+                                    value={params.customElement?.umbelRayCount ?? 64}
+                                    min={16}
+                                    max={110}
+                                    step={2}
+                                    onChange={(v) => updateCustomPart({ umbelRayCount: v })}
+                                  />
+                                  <SliderControl
+                                    label="Esfericidad 3D de Umbela"
+                                    value={params.customElement?.umbelSphereRatio ?? 0.94}
+                                    min={0.25}
+                                    max={1.0}
+                                    step={0.02}
+                                    onChange={(v) => updateCustomPart({ umbelSphereRatio: v })}
+                                  />
+                                  <SliderControl
+                                    label="Tamaño de Burbujas / Orbes"
+                                    value={params.customElement?.tipBubbleScale ?? 1.15}
+                                    min={0.4}
+                                    max={2.2}
+                                    step={0.05}
+                                    unit="×"
+                                    onChange={(v) => updateCustomPart({ tipBubbleScale: v })}
+                                  />
+                                  <SliderControl
+                                    label="Iridiscencia Multicolor"
+                                    value={params.customElement?.iridescentShift ?? 0.85}
+                                    min={0}
+                                    max={1}
+                                    step={0.05}
+                                    onChange={(v) => updateCustomPart({ iridescentShift: v })}
+                                  />
+                                </>
+                              )}
+                              {showBasalSliders && (
+                                <>
+                                  <SliderControl
+                                    label="Nº Hojas Basales"
+                                    value={params.customElement?.basalLeafCount ?? 14}
+                                    min={0}
+                                    max={28}
+                                    step={1}
+                                    onChange={(v) => updateCustomPart({ basalLeafCount: v })}
+                                  />
+                                  <SliderControl
+                                    label="Longitud Hojas Basales"
+                                    value={params.customElement?.basalLeafLength ?? 1.15}
+                                    min={0.4}
+                                    max={2.2}
+                                    step={0.05}
+                                    unit="×"
+                                    onChange={(v) => updateCustomPart({ basalLeafLength: v })}
+                                  />
+                                </>
+                              )}
+                              {showFungiSliders && (
+                                <>
+                                  <SliderControl
+                                    label="Abombamiento de Domo / Sombrero"
+                                    value={params.customElement?.capDomeHeight ?? 0.62}
+                                    min={0.15}
+                                    max={1.25}
+                                    step={0.05}
+                                    onChange={(v) => updateCustomPart({ capDomeHeight: v })}
+                                  />
+                                  <SliderControl
+                                    label="Motas / Verrugas 3D en Sombrero"
+                                    value={params.customElement?.capSpotDensity ?? 0.65}
+                                    min={0}
+                                    max={1}
+                                    step={0.05}
+                                    onChange={(v) => updateCustomPart({ capSpotDensity: v })}
+                                  />
+                                  <SliderControl
+                                    label="Nº de Laminillas Inferiores"
+                                    value={params.customElement?.gillCount ?? 22}
+                                    min={8}
+                                    max={36}
+                                    step={2}
+                                    onChange={(v) => updateCustomPart({ gillCount: v })}
+                                  />
+                                </>
+                              )}
+                              {showFlowerSliders && (
+                                <>
+                                  <SliderControl
+                                    label="Apertura de Pétalos / Corola"
+                                    value={params.customElement?.petalOpenness ?? 0.45}
+                                    min={0.05}
+                                    max={1}
+                                    step={0.05}
+                                    onChange={(v) => updateCustomPart({ petalOpenness: v })}
+                                  />
+                                  <SliderControl
+                                    label="Nº de Pétalos / Lóbulos"
+                                    value={params.customElement?.lobeCount ?? 6}
+                                    min={3}
+                                    max={12}
+                                    step={1}
+                                    onChange={(v) => updateCustomPart({ lobeCount: v })}
+                                  />
+                                  <SliderControl
+                                    label="Concavidad de Copa / Flor"
+                                    value={params.customElement?.cupDepth ?? 0.45}
+                                    min={0.05}
+                                    max={0.95}
+                                    step={0.05}
+                                    onChange={(v) => updateCustomPart({ cupDepth: v })}
+                                  />
+                                </>
+                              )}
+                              {showPadLayerSlider && (
+                                <SliderControl
+                                  label="Capas / Niveles de Copa"
+                                  value={params.customElement?.padLayers ?? 6}
+                                  min={2}
+                                  max={12}
+                                  step={1}
+                                  onChange={(v) => updateCustomPart({ padLayers: v })}
+                                />
+                              )}
+                              {showLeafShapeSliders && (
+                                <>
+                                  {isComposed && (
+                                    <SliderControl
+                                      label="Aserrado de Borde de Hoja"
+                                      value={params.customElement?.leafSerration ?? 0.35}
+                                      min={0}
+                                      max={1}
+                                      step={0.05}
+                                      onChange={(v) => updateCustomPart({ leafSerration: v })}
+                                    />
+                                  )}
+                                  <SliderControl
+                                    label="Ancho de Lámina Foliar"
+                                    value={params.leafWidthRatio}
+                                    min={0.2}
+                                    max={1.2}
+                                    step={0.05}
+                                    onChange={(v) => updateParam('leafWidthRatio', v)}
+                                  />
+                                  <SliderControl
+                                    label="Curvatura / Arco de Hoja"
+                                    value={params.leafBend}
+                                    min={0}
+                                    max={0.9}
+                                    step={0.05}
+                                    onChange={(v) => updateParam('leafBend', v)}
+                                  />
+                                </>
+                              )}
+                            </div>
+                          </details>
+                        )}
+
+                        {/* 4. SLIDERS CONTEXTUALES DE FILAMENTOS, ESPINAS Y RAÍCES */}
+                        {showSection4 && (
+                        <details
+                          ref={rootsSectionRef}
+                          open
+                          className={`bg-[#131d2b] border rounded-lg overflow-hidden group transition-all ${
+                            highlightedPart === 'roots'
+                              ? 'border-emerald-400 ring-2 ring-emerald-400/70 shadow-lg'
+                              : 'border-slate-800/90'
+                          }`}
+                        >
+                          <summary className="px-3 py-2 bg-[#162130] cursor-pointer flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-emerald-400 select-none">
+                            <span>
+                              4.{' '}
+                              {[
+                                showFilamentSliders ? 'Filamentos' : '',
+                                showThornSliders ? 'Espinas' : '',
+                                showRootsControls ? 'Raíces' : '',
+                              ]
+                                .filter(Boolean)
+                                .join(', ')}
+                            </span>
+                            <span className="text-[10px] text-slate-400 group-open:rotate-180 transition-transform">▾</span>
+                          </summary>
+                          <div className="p-2.5 space-y-2">
+                            {showFilamentSliders && (
+                              <>
+                                <SliderControl
+                                  label="Cantidad de Filamentos / Zarcillos"
+                                  value={params.customElement?.filamentCount ?? 22}
+                                  min={0}
+                                  max={48}
+                                  step={2}
+                                  onChange={(v) => updateCustomPart({ filamentCount: v })}
+                                />
+                                <SliderControl
+                                  label="Longitud de Filamentos Colgantes"
+                                  value={params.customElement?.filamentLength ?? 1.15}
+                                  min={0.2}
+                                  max={2.5}
+                                  step={0.05}
+                                  unit="×"
+                                  onChange={(v) => updateCustomPart({ filamentLength: v })}
+                                />
+                              </>
+                            )}
+                            {showThornSliders && (
+                              <>
+                                <SliderControl
+                                  label="Densidad de Espinas / Aguijones"
+                                  value={params.customElement?.thornDensity ?? 0.2}
+                                  min={0}
+                                  max={1}
+                                  step={0.05}
+                                  onChange={(v) => updateCustomPart({ thornDensity: v })}
+                                />
+                                <SliderControl
+                                  label="Longitud de Espinas"
+                                  value={params.customElement?.thornLength ?? 0.85}
+                                  min={0.2}
+                                  max={2.2}
+                                  step={0.05}
+                                  unit="×"
+                                  onChange={(v) => updateCustomPart({ thornLength: v })}
+                                />
+                              </>
+                            )}
+                            {showRootsControls && (
+                              <>
+                                <div className="pt-1 border-t border-slate-800/80 flex items-center justify-between">
+                                  <span className="text-[11px] text-slate-300">Raíces Superficiales Visibles</span>
+                                  <input
+                                    type="checkbox"
+                                    checked={params.showRoots}
+                                    onChange={(e) => updateParam('showRoots', e.target.checked)}
+                                    className="accent-emerald-400 cursor-pointer"
+                                  />
+                                </div>
+                                {params.showRoots && (
+                                  <>
+                                    <SliderControl
+                                      label="Número de Raíces Principales"
+                                      value={params.rootCount ?? 5}
+                                      min={2}
+                                      max={14}
+                                      step={1}
+                                      onChange={(v) => updateParam('rootCount', v)}
+                                    />
+                                    <SliderControl
+                                      label="Extensión Radial de Raíces"
+                                      value={params.rootLength ?? 1.2}
+                                      min={0.6}
+                                      max={4.5}
+                                      step={0.1}
+                                      unit="m"
+                                      onChange={(v) => updateParam('rootLength', v)}
+                                    />
+                                    <SliderControl
+                                      label="Grosor de Raíces"
+                                      value={params.rootThickness ?? 1.0}
+                                      min={0.25}
+                                      max={1.5}
+                                      step={0.05}
+                                      unit="×"
+                                      onChange={(v) => updateParam('rootThickness', v)}
+                                    />
+                                  </>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </details>
+                        )}
+                      </>
+                    );
+                  })()}
 
                   {/* 5. COLORES Y BRILLO DE CADA PARTE */}
                   <details open className="bg-[#131d2b] border border-slate-800/90 rounded-lg overflow-hidden group">
@@ -3592,6 +4569,7 @@ export default function App() {
             params={params}
             quality={quality}
             onStatsUpdate={setStats}
+            onPartClick={handleViewportPartClick}
           />
 
           {/* Compact Telemetry Badge at Bottom-Right Corner */}

@@ -9,6 +9,7 @@ import { generateProceduralTree } from '../engine/treeGenerator';
 import { generateEcosystemBaseGroup } from '../engine/ecosystemBaseGenerator';
 
 export type CameraPreset = 'overview' | 'front' | 'crown' | 'trunk' | 'top';
+export type ViewportHitPart = 'trunk' | 'canopy' | 'roots' | 'ecosystem_base';
 
 export interface TreeViewportHandle {
   exportGLB: () => void;
@@ -22,6 +23,7 @@ interface TreeViewportProps {
   params: TreeParams;
   quality: QualitySettings;
   onStatsUpdate: (stats: MeshStats) => void;
+  onPartClick?: (part: ViewportHitPart) => void;
 }
 
 const _targetCamPos = new THREE.Vector3();
@@ -147,8 +149,10 @@ function createHumanScaleReference(): THREE.Group {
 }
 
 export const TreeViewport = forwardRef<TreeViewportHandle, TreeViewportProps>(
-  ({ params, quality, onStatsUpdate }, ref) => {
+  ({ params, quality, onStatsUpdate, onPartClick }, ref) => {
     const mountRef = useRef<HTMLDivElement>(null);
+    const onPartClickRef = useRef(onPartClick);
+    onPartClickRef.current = onPartClick;
 
     const sceneRef = useRef<THREE.Scene | null>(null);
     const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -181,7 +185,10 @@ export const TreeViewport = forwardRef<TreeViewportHandle, TreeViewportProps>(
     });
 
     const computeIdealCameraFrame = (preset: CameraPreset) => {
-      const { height, radius, centerY } = treeBoundsRef.current;
+      const bounds = treeBoundsRef.current;
+      const height = Number.isFinite(bounds.height) && bounds.height > 0 ? bounds.height : 4.5;
+      const radius = Number.isFinite(bounds.radius) && bounds.radius > 0 ? bounds.radius : 2.2;
+      const centerY = Number.isFinite(bounds.centerY) ? bounds.centerY : height * 0.48;
       const cam = cameraRef.current;
       const vFovRad = THREE.MathUtils.degToRad(cam?.fov || 42);
       const aspect = Math.max(0.5, cam?.aspect || 1.35);
@@ -349,7 +356,7 @@ export const TreeViewport = forwardRef<TreeViewportHandle, TreeViewportProps>(
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
       renderer.toneMappingExposure = 1.12;
       renderer.shadowMap.enabled = !isSoftwareGl;
-      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.shadowMap.type = THREE.PCFShadowMap;
       container.appendChild(renderer.domElement);
       rendererRef.current = renderer;
 
@@ -483,7 +490,8 @@ export const TreeViewport = forwardRef<TreeViewportHandle, TreeViewportProps>(
       scene.add(humanScale);
       scaleRefGroup.current = humanScale;
 
-      const clock = new THREE.Clock();
+      const startTimeMs = performance.now();
+      let lastTimeMs = startTimeMs;
       let frameId = 0;
 
       function afterDraw(cb: () => void) {
@@ -503,8 +511,10 @@ export const TreeViewport = forwardRef<TreeViewportHandle, TreeViewportProps>(
       }
 
       function tick() {
-        const dt = Math.min(0.1, clock.getDelta());
-        const elapsed = clock.getElapsedTime();
+        const nowMs = performance.now();
+        const dt = Math.min(0.1, Math.max(0, (nowMs - lastTimeMs) / 1000));
+        const elapsed = (nowMs - startTimeMs) / 1000;
+        lastTimeMs = nowMs;
 
         if (
           paramsRef.current.windEnabled ||
@@ -517,7 +527,26 @@ export const TreeViewport = forwardRef<TreeViewportHandle, TreeViewportProps>(
           treeGroupRef.current.rotation.y += dt * 0.35;
         }
 
-        if (camTransitionActiveRef.current) {
+        if (
+          !Number.isFinite(camera.position.x) ||
+          !Number.isFinite(camera.position.y) ||
+          !Number.isFinite(camera.position.z)
+        ) {
+          camera.position.set(8.8, 5.4, 10.2);
+        }
+        if (
+          !Number.isFinite(controls.target.x) ||
+          !Number.isFinite(controls.target.y) ||
+          !Number.isFinite(controls.target.z)
+        ) {
+          controls.target.set(0, 2.2, 0);
+        }
+
+        if (
+          camTransitionActiveRef.current &&
+          Number.isFinite(_targetCamPos.x) &&
+          Number.isFinite(_targetLookAt.y)
+        ) {
           camera.position.x = THREE.MathUtils.damp(camera.position.x, _targetCamPos.x, 6, dt);
           camera.position.y = THREE.MathUtils.damp(camera.position.y, _targetCamPos.y, 6, dt);
           camera.position.z = THREE.MathUtils.damp(camera.position.z, _targetCamPos.z, 6, dt);
@@ -555,7 +584,88 @@ export const TreeViewport = forwardRef<TreeViewportHandle, TreeViewportProps>(
       const resizeObserver = new ResizeObserver(() => handleResize());
       resizeObserver.observe(container);
 
+      const raycaster = new THREE.Raycaster();
+      const pointerNdc = new THREE.Vector2();
+      let pointerDownX = 0;
+      let pointerDownY = 0;
+
+      const handlePointerDown = (e: PointerEvent) => {
+        if (e.button !== 0) return;
+        pointerDownX = e.clientX;
+        pointerDownY = e.clientY;
+      };
+
+      const handlePointerUp = (e: PointerEvent) => {
+        if (e.button !== 0 || !onPartClickRef.current) return;
+        const dx = e.clientX - pointerDownX;
+        const dy = e.clientY - pointerDownY;
+        if (dx * dx + dy * dy > 25) return; // Ignore orbit/pan drags
+
+        const rect = renderer.domElement.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return;
+        pointerNdc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        pointerNdc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(pointerNdc, camera);
+
+        const targets: THREE.Object3D[] = [];
+        if (treeGroupRef.current) targets.push(treeGroupRef.current);
+        if (ecosystemBaseGroupRef.current && ecosystemBaseGroupRef.current.visible) {
+          targets.push(ecosystemBaseGroupRef.current);
+        }
+        if (targets.length === 0) return;
+
+        const hits = raycaster.intersectObjects(targets, true);
+        if (hits.length === 0) return;
+
+        const hit = hits[0];
+        let isBaseHit = false;
+        let cur: THREE.Object3D | null = hit.object;
+        while (cur) {
+          if (cur === ecosystemBaseGroupRef.current) {
+            isBaseHit = true;
+            break;
+          }
+          cur = cur.parent;
+        }
+
+        if (isBaseHit) {
+          onPartClickRef.current('ecosystem_base');
+          return;
+        }
+
+        const pNow = paramsRef.current;
+        const hNow = Math.max(1.5, treeBoundsRef.current.height || pNow.height || 4);
+        const lowBandY = Math.max(0.45, hNow * 0.16);
+        const hitName = hit.object.name || '';
+        const noRootsEngine = ['moss_fungi_rock', 'aquatic_coral_algae', 'cactus', 'rosette', 'bamboo'].includes(
+          pNow.engine
+        );
+
+        if (hitName === 'Trunk_And_Branches') {
+          if (hit.point.y <= lowBandY && pNow.showRoots && !noRootsEngine) {
+            onPartClickRef.current('roots');
+          } else {
+            onPartClickRef.current('trunk');
+          }
+        } else {
+          const hasHangingOrBasal =
+            pNow.engine === 'composed_custom' &&
+            ((pNow.customElement?.hangingElement && pNow.customElement.hangingElement !== 'none') ||
+              (pNow.customElement?.synthesizedBasalFoliage && pNow.customElement.synthesizedBasalFoliage !== 'none'));
+          if (hit.point.y <= lowBandY && hasHangingOrBasal) {
+            onPartClickRef.current('roots');
+          } else {
+            onPartClickRef.current('canopy');
+          }
+        }
+      };
+
+      renderer.domElement.addEventListener('pointerdown', handlePointerDown);
+      renderer.domElement.addEventListener('pointerup', handlePointerUp);
+
       return () => {
+        renderer.domElement.removeEventListener('pointerdown', handlePointerDown);
+        renderer.domElement.removeEventListener('pointerup', handlePointerUp);
         window.removeEventListener('resize', handleResize);
         resizeObserver.disconnect();
         cancelAnimationFrame(frameId);
@@ -677,8 +787,10 @@ export const TreeViewport = forwardRef<TreeViewportHandle, TreeViewportProps>(
       }
 
       // Update actual bounding box metrics for accurate camera framing
-      const actualH = Math.max(2.0, stats.treeHeightM);
-      const actualR = Math.max(1.2, stats.crownDiameterM * 0.5);
+      const safeH = Number.isFinite(stats.treeHeightM) ? stats.treeHeightM : params.height;
+      const safeD = Number.isFinite(stats.crownDiameterM) ? stats.crownDiameterM : params.height * 0.7;
+      const actualH = Math.max(2.0, safeH);
+      const actualR = Math.max(1.2, safeD * 0.5);
       treeBoundsRef.current = {
         height: actualH,
         radius: actualR,

@@ -1439,6 +1439,82 @@ function buildSynthesizedTipPrimitive(
     return parts;
   }
 
+  if (primitiveType === 'none') {
+    return parts;
+  }
+
+  if (primitiveType === 'spotted_spore_dome') {
+    const capR = tipRadius * 1.15;
+    const capH = tipRadius * 0.85;
+    const domeProfile: THREE.Vector2[] = [
+      new THREE.Vector2(0.001, -capH * 0.08),
+      new THREE.Vector2(capR * 0.52, -capH * 0.05),
+      new THREE.Vector2(capR * 0.98, 0),
+      new THREE.Vector2(capR * 1.0, capH * 0.25),
+      new THREE.Vector2(capR * 0.72, capH * 0.72),
+      new THREE.Vector2(capR * 0.34, capH * 0.94),
+      new THREE.Vector2(0.001, capH),
+    ];
+    const capLathe = new THREE.LatheGeometry(domeProfile, 14);
+    capLathe.applyMatrix4(matAlign);
+    const capStd = ensureStandardAttributes(capLathe);
+    colorizeGeometryGradient(capStd, colCore, colOuter, rand, 0.04);
+    parts.push(capStd);
+
+    const goldenSpot = 2.39996323;
+    for (let sp = 0; sp < 7; sp++) {
+      const spFrac = 0.22 + (sp / 7) * 0.65;
+      const spAng = sp * goldenSpot;
+      const spR = capR * Math.cos(spFrac * Math.PI * 0.46) * 0.88;
+      const spY = capH * (0.14 + Math.sin(spFrac * Math.PI * 0.46) * 0.82);
+      const wart = new THREE.IcosahedronGeometry(capR * 0.13, 1);
+      wart.scale(1.15, 0.55, 1.15);
+      wart.translate(Math.cos(spAng) * spR, spY, Math.sin(spAng) * spR);
+      wart.applyMatrix4(matAlign);
+      const wStd = ensureStandardAttributes(wart);
+      colorizeGeometryGradient(wStd, '#f8fafc', colHighlight, rand, 0.02);
+      parts.push(wStd);
+    }
+    return parts;
+  }
+
+  if (primitiveType === 'bryophyte_moss_pad') {
+    const padR = tipRadius * 1.18;
+    const pad = new THREE.IcosahedronGeometry(padR, 2);
+    pad.scale(1.12, 0.58, 1.12);
+    pad.translate(0, padR * 0.25, 0);
+    pad.applyMatrix4(matAlign);
+    const padStd = ensureStandardAttributes(pad);
+    colorizeGeometryGradient(padStd, '#14532d', '#84cc16', rand, 0.06);
+    parts.push(padStd);
+
+    for (let f = 0; f < 6; f++) {
+      const fAng = (f / 6) * Math.PI * 2 + 0.3;
+      const fDist = padR * (0.25 + (f % 2) * 0.32);
+      const fH = padR * (0.65 + (f % 3) * 0.22);
+      const stalk = buildSmoothCurveTube(
+        [
+          new THREE.Vector3(Math.cos(fAng) * fDist, padR * 0.22, Math.sin(fAng) * fDist),
+          new THREE.Vector3(Math.cos(fAng) * (fDist + padR * 0.14), fH * 0.72, Math.sin(fAng) * (fDist + padR * 0.14)),
+          new THREE.Vector3(Math.cos(fAng) * (fDist + padR * 0.24), fH, Math.sin(fAng) * (fDist + padR * 0.24)),
+        ],
+        padR * 0.045,
+        padR * 0.015,
+        5,
+        4,
+        '#4d7c0f',
+        '#bef264',
+        rand,
+        0,
+        0,
+        true
+      );
+      stalk.applyMatrix4(matAlign);
+      parts.push(stalk);
+    }
+    return parts;
+  }
+
   // Fallback: lanceolate blade or miniature dome
   const blade = buildCustomContouredLeaf(
     tipRadius * 1.8,
@@ -3957,9 +4033,7 @@ export function generateComposedBotanicalGeometry(
     el.stemStructure === 'thorny_horn_crown' || el.stemStructure === 'rosette_cluster';
   const isFloralBudCanopy =
     el.canopyElement === 'custom_flower_corolla' || isSynthesizedFloralOrUmbelHead;
-  const isFungiOrUmbelColony =
-    el.stemStructure === 'multi_stalk_umbel_colony' ||
-    el.canopyElement === 'custom_fungi_cap';
+  const isMultiStalkColony = el.stemStructure === 'multi_stalk_umbel_colony';
 
   // ═══════════════════════════════════════════════════════════════════════════
   // LAYER 0: SPREADING GNARLED ROOT COLLAR (Welded into trunk base at y = 0..startY)
@@ -4180,8 +4254,32 @@ export function generateComposedBotanicalGeometry(
       for (const bg of bladeGeos) {
         detailGeometries.push(bg);
       }
+
+      if (b < 5) {
+        const bCurve = new THREE.CatmullRomCurve3(bPts);
+        mainStemCurves.push({ curve: bCurve, rStart: bladeHalfW * 0.65, rEnd: bladeHalfW * 0.15 });
+        canopyAttachmentNodes.push({
+          pos: bPts[bPts.length - 1].clone(),
+          radius: H * 0.17 * leafScale,
+          stemRadius: bladeHalfW * 0.2,
+          dir: bCurve.getTangentAt(1.0).normalize(),
+          isPrimaryApex: b === 0,
+        });
+      }
     }
-  } else if (isFungiOrUmbelColony) {
+    if (mainStemCurves.length === 0) {
+      mainStemCurves.push({ curve: new THREE.CatmullRomCurve3(caudexPts), rStart: R * 1.2, rEnd: R * 0.9 });
+    }
+    if (canopyAttachmentNodes.length === 0) {
+      canopyAttachmentNodes.push({
+        pos: new THREE.Vector3(0, caudexH * 1.05, 0),
+        radius: H * 0.24 * leafScale,
+        stemRadius: R * 0.8,
+        dir: new THREE.Vector3(0, 1, 0),
+        isPrimaryApex: true,
+      });
+    }
+  } else if (isMultiStalkColony) {
     // ─────────────────────────────────────────────────────────────────────────
     // MULTI-STALK UMBRELLA / BIOLUMINESCENT MUSHROOM / SPORE DOME COLONY
     // ─────────────────────────────────────────────────────────────────────────
@@ -5642,7 +5740,7 @@ export function generateComposedBotanicalGeometry(
   // LAYER 1B: AI-SYNTHESIZED BASAL FOLIAGE ("synthesizedBasalFoliage")
   // (e.g., Long arching green grass/allium blades around the base of a flower stalk)
   // ═══════════════════════════════════════════════════════════════════════════
-  if (!isClawOrCrownRosette) {
+  {
     const basalParts = buildSynthesizedBasalFoliage(
       el,
       H,
@@ -6098,7 +6196,7 @@ export function generateComposedBotanicalGeometry(
   const golden = 2.39996323;
   const padSubBranchCurves: { curve: THREE.CatmullRomCurve3; rStart: number; rEnd: number }[] = [];
 
-  if (!isClawOrCrownRosette && isMossyDeadwoodTrunk) {
+  if (isMossyDeadwoodTrunk) {
     // 3D Bryophyte Moss Mantle & Gametophyte Filaments hugging the dorsal ridges & crevices of the twisted trunk!
     const mossParts = buildSculptedBarkMossMantle(
       mainStemCurves,
@@ -6113,9 +6211,8 @@ export function generateComposedBotanicalGeometry(
       detailGeometries.push(mp);
     }
   } else if (
-    !isClawOrCrownRosette &&
-    (el.canopyElement === 'spherical_bubble_umbel' ||
-      el.synthesizedHeadTopology === 'spherical_umbel_rays')
+    el.canopyElement === 'spherical_bubble_umbel' ||
+    el.synthesizedHeadTopology === 'spherical_umbel_rays'
   ) {
     // 3D Spherical Bubble / Dandelion / Allium Umbel welded onto each stalk apex!
     canopyAttachmentNodes.forEach((node) => {
@@ -6143,9 +6240,8 @@ export function generateComposedBotanicalGeometry(
       });
     });
   } else if (
-    !isClawOrCrownRosette &&
-    (el.canopyElement === 'radiating_floret_head' ||
-      el.synthesizedHeadTopology === 'layered_petal_starburst')
+    el.canopyElement === 'radiating_floret_head' ||
+    el.synthesizedHeadTopology === 'layered_petal_starburst'
   ) {
     canopyAttachmentNodes.forEach((node) => {
       const headScale = Math.max(0.42, node.radius * (node.isPrimaryApex ? 1.12 : 0.78));
@@ -6172,9 +6268,8 @@ export function generateComposedBotanicalGeometry(
       });
     });
   } else if (
-    !isClawOrCrownRosette &&
-    (el.canopyElement === 'hanging_bell_cluster' ||
-      el.synthesizedHeadTopology === 'hanging_bell_raceme')
+    el.canopyElement === 'hanging_bell_cluster' ||
+    el.synthesizedHeadTopology === 'hanging_bell_raceme'
   ) {
     canopyAttachmentNodes.forEach((node) => {
       const bellScale = Math.max(0.4, node.radius * (node.isPrimaryApex ? 1.1 : 0.78));
@@ -6196,9 +6291,8 @@ export function generateComposedBotanicalGeometry(
       });
     });
   } else if (
-    !isClawOrCrownRosette &&
-    (el.canopyElement === 'crystal_prism_crown' ||
-      el.synthesizedHeadTopology === 'crystal_spire_cluster')
+    el.canopyElement === 'crystal_prism_crown' ||
+    el.synthesizedHeadTopology === 'crystal_spire_cluster'
   ) {
     canopyAttachmentNodes.forEach((node) => {
       const crownScale = Math.max(0.4, node.radius * (node.isPrimaryApex ? 1.12 : 0.8));
@@ -6225,9 +6319,8 @@ export function generateComposedBotanicalGeometry(
       });
     });
   } else if (
-    !isClawOrCrownRosette &&
-    (el.canopyElement === 'procedural_lathe_head' ||
-      el.synthesizedHeadTopology === 'revolved_lathe_chalice')
+    el.canopyElement === 'procedural_lathe_head' ||
+    el.synthesizedHeadTopology === 'revolved_lathe_chalice'
   ) {
     canopyAttachmentNodes.forEach((node) => {
       const latheScale = Math.max(0.42, node.radius * (node.isPrimaryApex ? 1.12 : 0.8));
@@ -6254,9 +6347,8 @@ export function generateComposedBotanicalGeometry(
       });
     });
   } else if (
-    !isClawOrCrownRosette &&
-    (el.canopyElement === 'custom_spline_leaf_crown' ||
-      el.synthesizedHeadTopology === 'spline_petal_corona')
+    el.canopyElement === 'custom_spline_leaf_crown' ||
+    el.synthesizedHeadTopology === 'spline_petal_corona'
   ) {
     canopyAttachmentNodes.forEach((node) => {
       const splineScale = Math.max(0.42, node.radius * (node.isPrimaryApex ? 1.16 : 0.82));
@@ -6282,7 +6374,7 @@ export function generateComposedBotanicalGeometry(
         detailGeometries.push(sp);
       });
     });
-  } else if (!isClawOrCrownRosette && (el.canopyElement === 'custom_fungi_cap' || isFungiOrUmbelColony)) {
+  } else if (el.canopyElement === 'custom_fungi_cap') {
     canopyAttachmentNodes.forEach((node) => {
       const capScale = Math.max(0.28, node.radius * 1.15);
       const capParts = buildSculptedUmbrellaFungiCap(
@@ -6309,7 +6401,7 @@ export function generateComposedBotanicalGeometry(
         detailGeometries.push(cp);
       });
     });
-  } else if (!isClawOrCrownRosette && el.canopyElement === 'stem_hugging_leaves') {
+  } else if (el.canopyElement === 'stem_hugging_leaves') {
     mainStemCurves.forEach(({ curve, rStart, rEnd }) => {
       const leafNodes = Math.max(
         14,
@@ -6369,7 +6461,7 @@ export function generateComposedBotanicalGeometry(
         }
       }
     });
-  } else if (!isClawOrCrownRosette && el.canopyElement === 'cloud_bonsai_pads') {
+  } else if (el.canopyElement === 'cloud_bonsai_pads') {
     canopyAttachmentNodes.forEach((node) => {
       const padR = Math.max(0.48, node.radius * 0.88);
       const padH = padR * 0.34;
@@ -6486,7 +6578,7 @@ export function generateComposedBotanicalGeometry(
         }
       });
     });
-  } else if (!isClawOrCrownRosette && el.canopyElement === 'custom_flower_corolla') {
+  } else if (el.canopyElement === 'custom_flower_corolla') {
     canopyAttachmentNodes.forEach((node) => {
       const budScale = Math.max(0.45, node.radius * (node.isPrimaryApex ? 1.15 : 0.78));
       const budParts = buildSculptedFlowerCorollaOrBud(
@@ -6511,7 +6603,7 @@ export function generateComposedBotanicalGeometry(
         detailGeometries.push(bp);
       });
     });
-  } else if (!isClawOrCrownRosette) {
+  } else if (!isClawOrCrownRosette || el.canopyElement !== 'thorn_spur_clusters') {
     canopyAttachmentNodes.forEach((node) => {
       const clusterParts = buildCustomElementFoliageCluster(
         el,
@@ -6549,7 +6641,7 @@ export function generateComposedBotanicalGeometry(
       : mainStemCurves;
 
   if (
-    !isFungiOrUmbelColony &&
+    el.canopyElement !== 'custom_fungi_cap' &&
     el.hangingElement === 'weeping_filaments' &&
     filCount > 0 &&
     branchSources.length > 0
@@ -6981,4 +7073,82 @@ export function generateComposedBotanicalGeometry(
   }
 
   return { bodyGeometries, detailGeometries };
+}
+
+/**
+ * Builds an isolated macro 3D Group for a single SynthesizedTipPrimitive atop a short curved pedicel,
+ * so Part Picker thumbnails clearly depict the exact 3D shape of each tip primitive.
+ */
+export function buildIsolatedTipPreviewGroup(
+  primitiveType: string,
+  colors: {
+    trunk?: string;
+    main?: string;
+    tip?: string;
+    flower?: string;
+    accent?: string;
+  } = {}
+): THREE.Group {
+  let s = 4242;
+  const rand = () => {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+  const colStem = colors.trunk || '#3f6212';
+  const colMain = colors.main || '#22c55e';
+  const colCore = colors.tip || '#86efac';
+  const colOuter = colors.flower || '#f472b6';
+  const colHighlight = colors.accent || '#38bdf8';
+
+  const group = new THREE.Group();
+  const pedicelPts = [
+    new THREE.Vector3(0, 0, 0),
+    new THREE.Vector3(0.08, 0.32, 0.04),
+    new THREE.Vector3(0.02, 0.68, 0),
+  ];
+  const stemGeo = buildSmoothCurveTube(
+    pedicelPts,
+    0.075,
+    0.045,
+    8,
+    7,
+    colStem,
+    colMain,
+    rand,
+    4,
+    0.08,
+    false
+  );
+  const stemMat = new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    roughness: 0.55,
+    metalness: 0.04,
+  });
+  group.add(new THREE.Mesh(stemGeo, stemMat));
+
+  const tipParts = buildSynthesizedTipPrimitive(
+    primitiveType,
+    0.68,
+    new THREE.Vector3(0.02, 0.65, 0),
+    new THREE.Vector3(0, 1, 0),
+    primitiveType === 'lanceolate_blade' || primitiveType === 'bryophyte_moss_pad' ? colMain : colCore,
+    colOuter,
+    colHighlight,
+    1.1,
+    rand
+  );
+
+  if (tipParts.length > 0) {
+    const tipMat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.34,
+      metalness: 0.08,
+      side: THREE.DoubleSide,
+    });
+    tipParts.forEach((geo) => {
+      group.add(new THREE.Mesh(geo, tipMat));
+    });
+  }
+
+  return group;
 }

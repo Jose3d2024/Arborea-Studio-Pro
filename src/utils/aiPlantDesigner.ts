@@ -286,6 +286,9 @@ export interface ImageVisionFeatures {
   hasEnclosedCenterHole: boolean;
   iridescentScore: number;
   hasGreenBasalStem: boolean;
+  silhouetteRadii: number[];
+  colorUpper: string;
+  colorLower: string;
   detectedArchetype: DetectedBotanicalArchetype;
 }
 
@@ -317,19 +320,20 @@ const CUSTOM_SPECIES_STORAGE_KEY = 'arborea_custom_species_v1';
 export function upgradeSynthesizedCustomElement(
   el: CustomBotanicalElement
 ): CustomBotanicalElement {
-  const text = `${el.name || ''} ${el.scientificName || ''} ${el.description || ''} ${el.aiNewPartsReport || ''}`.toLowerCase();
-  const isBubbleUmbel =
-    text.includes('burbuja') ||
-    text.includes('sphaer') ||
-    text.includes('umbel') ||
-    text.includes('allium') ||
-    text.includes('diente de le') ||
-    (text.includes('iridisc') && text.includes('esf'));
+  const text = `${el.name || ''} ${el.scientificName || ''} ${el.description || ''}`.toLowerCase();
+  const isLegacyCanopy =
+    el.canopyElement === 'custom_flower_corolla' ||
+    el.canopyElement === 'cloud_bonsai_pads' ||
+    el.canopyElement === 'custom_leaf_lamina';
 
-  if (
-    isBubbleUmbel &&
-    el.canopyElement !== 'spherical_bubble_umbel'
-  ) {
+  const isBubbleUmbel =
+    isLegacyCanopy &&
+    (text.includes('burbuja') ||
+      text.includes('sphaer') ||
+      text.includes('diente de le') ||
+      (text.includes('iridisc') && text.includes('esf')));
+
+  if (isBubbleUmbel) {
     return {
       ...el,
       stemStructure: 'herbaceous_curved_stalk',
@@ -354,14 +358,11 @@ export function upgradeSynthesizedCustomElement(
   }
 
   const isMossyTrunk =
-    (text.includes('tronco') || text.includes('lignum') || text.includes('madera') || text.includes('muñon')) &&
-    (text.includes('musgo') || text.includes('bryophyt') || text.includes('liquen'));
+    isLegacyCanopy &&
+    (text.includes('tronco') || text.includes('lignum') || text.includes('muñon')) &&
+    (text.includes('musgo') || text.includes('bryophyt'));
 
-  if (
-    isMossyTrunk &&
-    (el.canopyElement !== 'moss_velvet_mantle' ||
-      el.stemStructure !== 'serpentine_mossy_deadwood')
-  ) {
+  if (isMossyTrunk) {
     return {
       ...el,
       stemStructure: 'serpentine_mossy_deadwood',
@@ -473,6 +474,16 @@ export function saveCustomSpeciesToApp(preset: SpeciesPreset): SpeciesPreset[] {
     // ignore storage quota errors
   }
   return next;
+}
+
+export function deleteCustomSpeciesFromApp(presetId: string): SpeciesPreset[] {
+  const existing = loadSavedCustomSpecies().filter((item) => item.id !== presetId);
+  try {
+    localStorage.setItem(CUSTOM_SPECIES_STORAGE_KEY, JSON.stringify(existing));
+  } catch {
+    // ignore storage quota errors
+  }
+  return existing;
 }
 
 export type PartModuleType =
@@ -673,6 +684,8 @@ function extractVisionFeaturesFromCanvas(
   const upperWarmCoralSamples: [number, number, number][] = [];
   const upperPinkVioletSamples: [number, number, number][] = [];
   const upperCyanBlueSamples: [number, number, number][] = [];
+  const upperZoneAllSamples: [number, number, number][] = [];
+  const lowerZoneAllSamples: [number, number, number][] = [];
 
   let fgCount = 0;
   let centerMidCount = 0;
@@ -775,6 +788,11 @@ function extractVisionFeaturesFromCanvas(
       if (normY >= 0.52 && hue >= 65 && hue <= 165 && sat > 0.22 && lum > 0.12 && lum < 0.70) {
         lowerGreenSamples.push([r, g, b]);
       }
+      if (normY < 0.44 && sat > 0.14 && lum > 0.12 && lum < 0.90) {
+        upperZoneAllSamples.push([r, g, b]);
+      } else if (normY > 0.58 && sat > 0.12 && lum > 0.10 && lum < 0.85) {
+        lowerZoneAllSamples.push([r, g, b]);
+      }
 
       // Collect pure brown wood bark samples vs chlorophyll moss green samples
       if (hue >= 14 && hue <= 48 && sat >= 0.16 && sat <= 0.65 && lum >= 0.10 && lum <= 0.52) {
@@ -844,9 +862,9 @@ function extractVisionFeaturesFromCanvas(
   const pinkFrac = upperPinkVioletSamples.length / upperHueTotal;
   const cyanFrac = upperCyanBlueSamples.length / upperHueTotal;
   const activeHueBuckets =
-    (upperWarmCoralSamples.length > 18 ? 1 : 0) +
-    (upperPinkVioletSamples.length > 12 ? 1 : 0) +
-    (upperCyanBlueSamples.length > 12 ? 1 : 0);
+    (upperWarmCoralSamples.length > 48 ? 1 : 0) +
+    (upperPinkVioletSamples.length > 40 ? 1 : 0) +
+    (upperCyanBlueSamples.length > 40 ? 1 : 0);
 
   const iridescentScore = Number(
     Math.min(
@@ -1024,40 +1042,44 @@ function extractVisionFeaturesFromCanvas(
   let detectedArchetype: DetectedBotanicalArchetype = 'sympodial_broadleaf_tree';
 
   if (
-    iridescentScore >= 0.52 &&
+    activeHueBuckets === 3 &&
+    iridescentScore >= 0.65 &&
     hasGreenBasalStem &&
-    topDensityRatio >= 0.52 &&
-    upperWidthRatio >= 0.45
+    topDensityRatio >= 0.58 &&
+    upperWidthRatio >= 0.50
   ) {
     detectedArchetype = 'umbel_bubble_flower';
   } else if (
     hasSignificantWoodAndMoss &&
-    trunkSCurve >= 0.18 &&
-    upperWidthRatio < 0.62 &&
+    (dominantHueCategory === 'green' || dominantHueCategory === 'earthy') &&
+    mossGreenSamples.length > 40 &&
+    trunkSCurve >= 0.22 &&
+    upperWidthRatio < 0.58 &&
     !hasEnclosedCenterHole
   ) {
     detectedArchetype = 'mossy_deadwood_trunk';
   } else if (
-    (warmOrangeRatio > 0.12 && (upperCapIslands >= 1.6 || midStemIslands >= 2.0 || isDarkSceneBg)) ||
-    (isDarkSceneBg && upperCapIslands >= 1.8 && midStemIslands >= 1.8) ||
-    (vividClusterCount >= 4 && midStemIslands >= 2.3 && capSpotVariance > 0.18)
+    edgeSpikiness > 0.28 &&
+    topDensityRatio < 0.68 &&
+    midStemIslands >= 2.1 &&
+    !isDarkSceneBg
+  ) {
+    detectedArchetype = 'spiny_claw_rosette';
+  } else if (
+    isDarkSceneBg &&
+    dominantHueCategory === 'golden' &&
+    vividClusterCount >= 5 &&
+    upperCapIslands >= 2.2 &&
+    midStemIslands >= 2.5
   ) {
     detectedArchetype = 'fungi_umbel_colony';
   } else if (
     dominantHueCategory === 'violet' ||
-    (dominantHueCategory === 'crimson' &&
-      upperWidthRatio < 0.46 &&
-      lowerWidthRatio < 0.36 &&
-      midStemIslands < 1.9)
+    ((dominantHueCategory === 'crimson' || dominantHueCategory === 'golden') &&
+      midStemIslands < 2.2 &&
+      upperWidthRatio < 0.68)
   ) {
     detectedArchetype = 'flower_bud_stalk';
-  } else if (
-    edgeSpikiness > 0.34 &&
-    topDensityRatio < 0.62 &&
-    midStemIslands >= 2.4 &&
-    !isDarkSceneBg
-  ) {
-    detectedArchetype = 'spiny_claw_rosette';
   } else if (
     hasEnclosedCenterHole &&
     (dominantHueCategory === 'green' || dominantHueCategory === 'earthy')
@@ -1073,6 +1095,16 @@ function extractVisionFeaturesFromCanvas(
   } else {
     detectedArchetype = 'sympodial_broadleaf_tree';
   }
+
+  const rawBandWidths = [8, 7, 5, 4, 3, 1].map((bIdx) =>
+    bandMaxX[bIdx] > bandMinX[bIdx] ? (bandMaxX[bIdx] - bandMinX[bIdx]) / w : 0.2
+  );
+  const maxBandW = Math.max(0.15, ...rawBandWidths);
+  const silhouetteRadii = rawBandWidths.map((bw) =>
+    Number(Math.max(0.14, Math.min(1.08, (bw / maxBandW) * 0.96)).toFixed(2))
+  );
+  const colorUpper = avgColor(upperZoneAllSamples, colorLeafTip);
+  const colorLower = avgColor(lowerZoneAllSamples, colorTrunk);
 
   return {
     colorTrunk,
@@ -1097,6 +1129,9 @@ function extractVisionFeaturesFromCanvas(
     hasEnclosedCenterHole,
     iridescentScore,
     hasGreenBasalStem,
+    silhouetteRadii,
+    colorUpper,
+    colorLower,
     detectedArchetype,
   };
 }
@@ -1121,7 +1156,7 @@ export async function preparePlantImageForAI(file: File): Promise<PreparedPlantI
     image.src = rawDataUrl;
   });
 
-  const maxDimension = 768;
+  const maxDimension = 512;
   let targetW = img.naturalWidth || img.width || 512;
   let targetH = img.naturalHeight || img.height || 512;
 
@@ -1152,7 +1187,7 @@ export async function preparePlantImageForAI(file: File): Promise<PreparedPlantI
   sendCtx.drawImage(img, 0, 0, targetW, targetH);
 
   const outputMime: 'image/jpeg' = 'image/jpeg';
-  const compressedDataUrl = sendCanvas.toDataURL(outputMime, 0.85);
+  const compressedDataUrl = sendCanvas.toDataURL(outputMime, 0.82);
   const base64Payload = compressedDataUrl.split(',')[1] || '';
 
   return {
@@ -1175,6 +1210,7 @@ export async function designPlantFromImageWithAI(
   const response = await fetch('/api/ai/design-plant', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    signal: AbortSignal.timeout(130000),
     body: JSON.stringify({
       imageBase64: prepared.imageBase64,
       mimeType: prepared.mimeType,

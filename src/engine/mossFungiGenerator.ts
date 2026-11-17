@@ -421,7 +421,7 @@ function buildOrganicMushroomCap(
         for (let vi = 0; vi < gPos.count; vi++) {
           const lx = gPos.getX(vi);
           const ly = gPos.getY(vi);
-          const tR = (lx + gillLen * 0.5) / gillLen; // 0 at stem, 1 at rim
+          const tR = THREE.MathUtils.clamp((lx + gillLen * 0.5) / Math.max(1e-5, gillLen), 0, 1); // 0 at stem, 1 at rim
           if (ly < 0) {
             // Curve bottom edge of gill gently upward toward the outer rim
             gPos.setY(vi, ly * (1.0 - Math.pow(tR, 1.8) * 0.65));

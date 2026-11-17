@@ -15,11 +15,20 @@ import {
   CanopyElementType,
   SurfaceElementType,
   HangingElementType,
+  SynthesizedTipPrimitive,
+  SynthesizedBasalFoliageType,
 } from '../types/botany';
 import {
   SPECIES_CATALOG,
   DEFAULT_TREE_PARAMS,
   TONAL_PALETTE_PRESETS,
+  STEM_STRUCTURE_META,
+  CANOPY_ELEMENT_META,
+  SURFACE_ELEMENT_META,
+  HANGING_ELEMENT_META,
+  SYNTHESIZED_TIP_META,
+  SYNTHESIZED_BASAL_META,
+  BARK_TYPE_META,
 } from '../data/speciesCatalog';
 import {
   loadSavedCustomSpecies,
@@ -107,14 +116,13 @@ const CROWN_SHAPES: CrownEnvelopeShape[] = [
   'inverse_conical',
 ];
 
-const BARK_TYPES: BarkType[] = [
-  'fissured',
-  'pine_plates',
-  'birch_paper',
-  'smooth_ash',
-  'fibrous_redwood',
-  'palm_rings',
-];
+const BARK_TYPES: BarkType[] = Object.keys(BARK_TYPE_META) as BarkType[];
+const ALL_STEM_STRUCTURES: StemStructureType[] = Object.keys(STEM_STRUCTURE_META) as StemStructureType[];
+const ALL_CANOPY_ELEMENTS: CanopyElementType[] = Object.keys(CANOPY_ELEMENT_META) as CanopyElementType[];
+const ALL_SURFACE_ELEMENTS: SurfaceElementType[] = Object.keys(SURFACE_ELEMENT_META) as SurfaceElementType[];
+const ALL_HANGING_ELEMENTS: HangingElementType[] = Object.keys(HANGING_ELEMENT_META) as HangingElementType[];
+const ALL_TIP_PRIMITIVES: SynthesizedTipPrimitive[] = Object.keys(SYNTHESIZED_TIP_META) as SynthesizedTipPrimitive[];
+const ALL_BASAL_FOLIAGE: SynthesizedBasalFoliageType[] = Object.keys(SYNTHESIZED_BASAL_META) as SynthesizedBasalFoliageType[];
 
 const CACTUS_SUBTYPES: CactusSubType[] = [
   'saguaro',
@@ -210,6 +218,9 @@ export function synthesizeHybridSpecies(currentPresetId?: string): HybridGenerat
   const families: HybridFamily[] = [
     'composed_modular_hybrid',
     'composed_modular_hybrid',
+    'composed_modular_hybrid',
+    'composed_modular_hybrid',
+    'composed_modular_hybrid',
     'sympodial_chimera',
     'sympodial_chimera',
     'monopodial_conifer',
@@ -279,87 +290,71 @@ export function synthesizeHybridSpecies(currentPresetId?: string): HybridGenerat
   };
 
   // ───────────────────────────────────────────────────────────────────────────
-  // 0. COMPOSED MODULAR 4-ELEMENT HYBRID (Stem + Surface + Canopy + Filaments)
+  // 0. COMPOSED MODULAR 4-ELEMENT HYBRID (Full 18×25×10×10×16×6×16 Library)
   // ───────────────────────────────────────────────────────────────────────────
   if (family === 'composed_modular_hybrid') {
-    const savedElem = customElements.length > 0 && Math.random() < 0.65 ? pick(customElements) : null;
-    const stemChoice: StemStructureType = savedElem
-      ? savedElem.stemStructure
-      : pick<StemStructureType>([
-          'spiral_volute_vine',
-          'gnarled_bonsai',
-          'thorny_horn_crown',
-          'sympodial_tree',
-          'weeping_willow',
-          'rosette_cluster',
-        ]);
-    const canopyChoice: CanopyElementType = savedElem
-      ? savedElem.canopyElement
-      : pick<CanopyElementType>([
-          'stem_hugging_leaves',
-          'cloud_bonsai_pads',
-          'thorn_spur_clusters',
-          'custom_leaf_lamina',
-          'custom_flower_corolla',
-          'custom_fungi_cap',
-        ]);
-    const surfaceChoice: SurfaceElementType = savedElem
-      ? savedElem.surfaceElement
-      : pick<SurfaceElementType>([
-          'braided_vines',
-          'curved_thorns_spines',
-          'moss_lichen_bark',
-          'smooth_striated',
-        ]);
-    const hangingChoice: HangingElementType = savedElem
-      ? savedElem.hangingElement
-      : pick<HangingElementType>([
-          'curling_tendrils',
-          'weeping_filaments',
-          'mycelial_fuzz',
-          'hanging_pods_berries',
-        ]);
+    const savedElem = customElements.length > 0 && Math.random() < 0.2 ? pick(customElements) : null;
+    const stemChoice: StemStructureType =
+      savedElem && Math.random() < 0.5 ? savedElem.stemStructure : pick(ALL_STEM_STRUCTURES);
+    const canopyChoice: CanopyElementType =
+      savedElem && Math.random() < 0.5 ? savedElem.canopyElement : pick(ALL_CANOPY_ELEMENTS);
+    const surfaceChoice: SurfaceElementType = pick(ALL_SURFACE_ELEMENTS);
+    const hangingChoice: HangingElementType = pick(ALL_HANGING_ELEMENTS);
+    const tipChoice: SynthesizedTipPrimitive = pick(ALL_TIP_PRIMITIVES);
+    const basalChoice: SynthesizedBasalFoliageType = pick(ALL_BASAL_FOLIAGE);
+    const barkChoice: BarkType = pick(BARK_TYPES);
 
     const hybridCustomElement: CustomBotanicalElement = {
       id: `elem_hyb_${newSeed}`,
       name: savedElem
-        ? `${savedElem.name} × ${shortSpeciesName(donorB)}`
-        : `Combinación Modular #${newSeed}`,
+        ? `${savedElem.name} × ${CANOPY_ELEMENT_META[canopyChoice]?.label.split(' ')[1] || 'Híbrido'}`
+        : `Híbrido Modular #${newSeed}`,
       scientificName: 'Botanica hybrida composita',
-      description: 'Síntesis combinatoria de tallo, superficie, copa y filamentos.',
+      description: 'Síntesis combinatoria aleatoria entre los 18 tallos, 25 copas, 10 superficies, 10 colgantes y 16 shaders.',
       createdAt: Date.now(),
       stemStructure: stemChoice,
       canopyElement: canopyChoice,
       surfaceElement: surfaceChoice,
       hangingElement: hangingChoice,
-      lobeCount: Math.round(randRange(4, 8)),
-      cupDepth: Number(randRange(0.2, 0.55).toFixed(2)),
-      spiralTurns: Number(randRange(1.1, 1.75).toFixed(2)),
-      spiralArms: Math.round(randRange(2, 8)),
-      thornDensity: Number(randRange(0.2, 0.85).toFixed(2)),
+      synthesizedTipPrimitive: tipChoice,
+      synthesizedBasalFoliage: basalChoice,
+      lobeCount: Math.round(randRange(4, 10)),
+      cupDepth: Number(randRange(0.2, 0.72).toFixed(2)),
+      spiralTurns: Number(randRange(1.0, 2.0).toFixed(2)),
+      spiralArms: Math.round(randRange(2, 9)),
+      stemCount: Math.round(randRange(1, 9)),
+      trunkBentS: Number(randRange(0.18, 0.78).toFixed(2)),
+      branchSpread: Number(randRange(0.42, 0.95).toFixed(2)),
+      branchDroop: Number(randRange(-0.1, 0.55).toFixed(2)),
+      thornDensity: Number(randRange(0.15, 0.85).toFixed(2)),
       thornLength: Number(randRange(0.65, 1.35).toFixed(2)),
-      filamentCount: Math.round(randRange(14, 28)),
-      filamentLength: Number(randRange(0.75, 1.35).toFixed(2)),
-      padLayers: Math.round(randRange(4, 8)),
+      filamentCount: Math.round(randRange(10, 28)),
+      filamentLength: Number(randRange(0.75, 1.45).toFixed(2)),
+      padLayers: Math.round(randRange(3, 8)),
+      petalOpenness: Number(randRange(0.2, 0.85).toFixed(2)),
+      umbelRayCount: Math.round(randRange(28, 84)),
+      umbelSphereRatio: Number(randRange(0.55, 0.96).toFixed(2)),
+      tipBubbleScale: Number(randRange(0.75, 1.35).toFixed(2)),
     };
 
-    const height = Number(randRange(4.2, 6.4).toFixed(1));
+    const height = Number(randRange(3.8, 6.8).toFixed(1));
     return {
       params: {
         ...baseParams,
         presetId: donorA.id,
         engine: 'composed_custom',
         foliageType: 'ai_custom_element',
+        barkType: barkChoice,
         height,
-        radius: Number(randRange(0.30, 0.46).toFixed(2)),
-        gnarl: Number(randRange(0.35, 0.68).toFixed(2)),
-        leafScale: Number(randRange(1.05, 1.38).toFixed(2)),
+        radius: Number(randRange(0.26, 0.48).toFixed(2)),
+        gnarl: Number(randRange(0.28, 0.74).toFixed(2)),
+        leafScale: Number(randRange(0.95, 1.42).toFixed(2)),
         leafDensity: 5,
         showRoots: true,
         customElement: hybridCustomElement,
       },
-      hybridName: `Combinación Modular: ${shortSpeciesName(donorA)} × ${shortSpeciesName(donorB)}`,
-      lineageSummary: `Tallo (${stemChoice}) + Copa (${canopyChoice}) + Superficie (${surfaceChoice})`,
+      hybridName: `Híbrido Modular: ${STEM_STRUCTURE_META[stemChoice]?.label.replace(/^\d+\.\s*✨?\s*/, '').split('(')[0].trim()} × ${CANOPY_ELEMENT_META[canopyChoice]?.label.replace(/^\d+\.\s*✨?\s*/, '').split('(')[0].trim()}`,
+      lineageSummary: `Tallo (${stemChoice}) + Copa (${canopyChoice}) + Superficie (${surfaceChoice}) + Corteza (${barkChoice})`,
     };
   }
 

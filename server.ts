@@ -1,12 +1,14 @@
 import 'dotenv/config';
 import express, { Request, Response } from 'express';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const currentDir =
+  typeof __dirname !== 'undefined'
+    ? __dirname
+    : path.dirname(fileURLToPath(import.meta.url));
 
 const VALID_ENGINES = new Set([
   'composed_custom',
@@ -545,16 +547,11 @@ function sanitizeAiPayload(raw: any, visionFeatures?: any) {
     combinedAiText.includes('diente de le') ||
     combinedAiText.includes('dandelion') ||
     combinedAiText.includes('allium') ||
-    combinedAiText.includes('esfera') ||
-    combinedAiText.includes('esféric') ||
-    combinedAiText.includes('globo') ||
     (combinedAiText.includes('iridisc') &&
-      (combinedAiText.includes('flor') ||
-        combinedAiText.includes('umbela') ||
+      (combinedAiText.includes('umbela') ||
         combinedAiText.includes('rocío') ||
         combinedAiText.includes('gota') ||
-        combinedAiText.includes('vitre'))) ||
-    vf.detectedArchetype === 'umbel_bubble_flower';
+        combinedAiText.includes('vitre')));
 
   const mentionsHangingBells =
     !mentionsBubbleUmbel &&
@@ -591,17 +588,16 @@ function sanitizeAiPayload(raw: any, visionFeatures?: any) {
 
   const mentionsMossyDeadwoodTrunk =
     !mentionsBubbleUmbel &&
-    (vf.detectedArchetype === 'mossy_deadwood_trunk' ||
-      ((combinedAiText.includes('tronco') ||
-        combinedAiText.includes('lignum') ||
-        combinedAiText.includes('madera') ||
-        combinedAiText.includes('muñon') ||
-        combinedAiText.includes('munon')) &&
-        (combinedAiText.includes('musgo') ||
-          combinedAiText.includes('bryophyt') ||
-          combinedAiText.includes('retorcid')) &&
-        !combinedAiText.includes('bonsai') &&
-        !combinedAiText.includes('bonsái')));
+    (combinedAiText.includes('tronco') ||
+      combinedAiText.includes('lignum') ||
+      combinedAiText.includes('madera') ||
+      combinedAiText.includes('muñon') ||
+      combinedAiText.includes('munon')) &&
+    (combinedAiText.includes('musgo') ||
+      combinedAiText.includes('bryophyt') ||
+      combinedAiText.includes('retorcid')) &&
+    !combinedAiText.includes('bonsai') &&
+    !combinedAiText.includes('bonsái');
 
   const mentionsSciFiGlobe =
     !mentionsBubbleUmbel &&
@@ -635,6 +631,11 @@ function sanitizeAiPayload(raw: any, visionFeatures?: any) {
     combinedAiText.includes('samara') ||
     combinedAiText.includes('adormidera') ||
     combinedAiText.includes('granada');
+
+  const hasValidStem =
+    typeof ce.stemStructure === 'string' && VALID_STEM_STRUCTURES.has(ce.stemStructure);
+  const hasValidCanopy =
+    typeof ce.canopyElement === 'string' && VALID_CANOPY_ELEMENTS.has(ce.canopyElement);
 
   let stemStructure = pickEnum<string>(
     ce.stemStructure,
@@ -682,22 +683,15 @@ function sanitizeAiPayload(raw: any, visionFeatures?: any) {
       : 'cloud_bonsai_pads'
   );
 
-  if (mentionsMossyDeadwoodTrunk) {
-    stemStructure = 'serpentine_mossy_deadwood';
-    canopyElement = 'moss_velvet_mantle';
-  } else if (mentionsBubbleUmbel) {
-    canopyElement = 'spherical_bubble_umbel';
-    if (stemStructure === 'gnarled_bonsai' || stemStructure === 'sympodial_tree') {
-      stemStructure = 'herbaceous_curved_stalk';
+  // Only apply semantic fallback repairs if the AI omitted/failed a valid enum
+  if (!hasValidCanopy) {
+    if (mentionsMossyDeadwoodTrunk) {
+      if (!hasValidStem) stemStructure = 'serpentine_mossy_deadwood';
+      canopyElement = 'moss_velvet_mantle';
+    } else if (mentionsBubbleUmbel) {
+      canopyElement = 'spherical_bubble_umbel';
+      if (!hasValidStem) stemStructure = 'herbaceous_curved_stalk';
     }
-  } else if (mentionsHangingBells && canopyElement === 'custom_flower_corolla') {
-    canopyElement = 'hanging_bell_cluster';
-  } else if (mentionsStarburstFloret && canopyElement === 'custom_flower_corolla') {
-    canopyElement = 'radiating_floret_head';
-  } else if (mentionsCrystalCrown && canopyElement !== 'crystal_prism_crown') {
-    canopyElement = 'crystal_prism_crown';
-  } else if (mentionsChalicePitcher && canopyElement === 'custom_flower_corolla') {
-    canopyElement = 'carnivorous_nepenthes_pitchers';
   }
 
   const synthesizedHeadTopology = pickEnum<string>(
@@ -737,7 +731,7 @@ function sanitizeAiPayload(raw: any, visionFeatures?: any) {
       ? 'faceted_crystal_gem'
       : canopyElement === 'radiating_floret_head'
       ? 'micro_floret_star'
-      : 'iridescent_bubble'
+      : 'none'
   );
 
   const synthesizedBasalFoliage = pickEnum<string>(
@@ -981,7 +975,7 @@ function sanitizeAiPayload(raw: any, visionFeatures?: any) {
   let colorAccent = sanitizeHex(p.colorAccent, vf.colorAccent || '#38bdf8');
 
   // Protect spherical bubble umbels / iridescent flowers from washed-out beige colors!
-  if (canopyElement === 'spherical_bubble_umbel' || mentionsBubbleUmbel) {
+  if (canopyElement === 'spherical_bubble_umbel') {
     if (isDesaturatedOrBeigeHex(colorTrunk)) {
       colorTrunk = '#2e6f21';
     }
@@ -999,12 +993,12 @@ function sanitizeAiPayload(raw: any, visionFeatures?: any) {
     }
   }
 
-  if (canopyElement === 'moss_velvet_mantle' || mentionsMossyDeadwoodTrunk) {
-    colorTrunk = '#583e2a';
-    colorLeafMain = '#4a7c1d';
-    colorLeafTip = '#7cb524';
-    colorFlower = '#5c8f22';
-    colorAccent = '#8ec435';
+  if (canopyElement === 'moss_velvet_mantle') {
+    if (isDesaturatedOrBeigeHex(colorTrunk)) colorTrunk = '#583e2a';
+    if (isDesaturatedOrBeigeHex(colorLeafMain)) colorLeafMain = '#4a7c1d';
+    if (isDesaturatedOrBeigeHex(colorLeafTip)) colorLeafTip = '#7cb524';
+    if (isDesaturatedOrBeigeHex(colorFlower)) colorFlower = '#5c8f22';
+    if (isDesaturatedOrBeigeHex(colorAccent)) colorAccent = '#8ec435';
   }
 
   const cleanParams = {
@@ -1125,6 +1119,270 @@ function buildVisionFallbackPayload(visionFeatures: any, userNotes?: string) {
   const notes = (userNotes || '').toLowerCase();
   const archetype = vf.detectedArchetype || '';
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // QUICK SEMANTIC MATCHING FROM USER NOTES (Full 25 Canopies & 18 Stems Library)
+  // ───────────────────────────────────────────────────────────────────────────
+  const buildFromSpec = (spec: {
+    name: string;
+    sci: string;
+    summary: string;
+    base: string;
+    bg: string;
+    stem: string;
+    canopy: string;
+    surface: string;
+    hanging: string;
+    bark: string;
+    tonal: string;
+    tip?: string;
+    basal?: string;
+    headTopo?: string;
+    latheProfileRadii?: number[];
+    petalContourProfile?: number[];
+    stemCount?: number;
+    lobeCount?: number;
+    petalOpenness?: number;
+    leafScale?: number;
+    h?: number;
+    r?: number;
+    colTrunk?: string;
+    colMain?: string;
+    colTip?: string;
+    colFlower?: string;
+    colAccent?: string;
+  }) =>
+    sanitizeAiPayload(
+      {
+        identifiedName: spec.name,
+        scientificName: spec.sci,
+        reasoningSummary: spec.summary,
+        recommendedBase: spec.base,
+        recommendedBg: spec.bg,
+        customElement: {
+          name: spec.name,
+          stemStructure: spec.stem,
+          canopyElement: spec.canopy,
+          surfaceElement: spec.surface,
+          hangingElement: spec.hanging,
+          synthesizedHeadTopology: spec.headTopo || 'none',
+          synthesizedTipPrimitive: spec.tip || 'none',
+          synthesizedBasalFoliage: spec.basal || 'none',
+          latheProfileRadii: spec.latheProfileRadii,
+          petalContourProfile: spec.petalContourProfile,
+          trunkBentS: clamp(vf.trunkSCurve, 0.12, 0.72, 0.30),
+          branchSpread: clamp(vf.upperWidthRatio, 0.35, 1.0, 0.65),
+          stemCount:
+            spec.stemCount ??
+            (spec.stem === 'herbaceous_curved_stalk' || spec.stem === 'baobab_pachycaul_bottle'
+              ? 1
+              : 5),
+          lobeCount: spec.lobeCount ?? 7,
+          petalOpenness: spec.petalOpenness ?? 0.45,
+        },
+        params: {
+          engine: 'composed_custom',
+          foliageType: 'ai_custom_element',
+          barkType: spec.bark,
+          tonalMode: spec.tonal,
+          height: spec.h || 4.4,
+          radius: spec.r || 0.28,
+          gnarl: 0.36,
+          leafScale: spec.leafScale ?? 1.25,
+          leafDensity: 5,
+          showRoots: true,
+          colorTrunk: spec.colTrunk || vf.colorTrunk || '#3b5d2a',
+          colorLeafMain: spec.colMain || vf.colorLeafMain || '#3f7d20',
+          colorLeafTip: spec.colTip || vf.colorLeafTip || '#84cc16',
+          colorFlower: spec.colFlower || vf.colorFlower || '#f472b6',
+          colorAccent: spec.colAccent || vf.colorAccent || '#38bdf8',
+        },
+      },
+      vf
+    );
+
+  if (notes.includes('sci-fi') || notes.includes('scifi') || notes.includes('plasma') || notes.includes('alien') || notes.includes('voronoi')) {
+    const isVoronoi = notes.includes('voronoi') || notes.includes('aerostato');
+    return buildFromSpec({
+      name: isVoronoi ? 'Aerostato Celular Voronoi' : 'Cuna Xenobotánica de Plasma',
+      sci: isVoronoi ? 'Xenopneumis reticulata' : 'Plasmaphyta bioluminescens',
+      summary: 'Estructura sci-fi de tentáculos biomecánicos sosteniendo globos bioluminiscentes con nódulos de savia y faroles suspendidos.',
+      base: 'exoplanetary_crater',
+      bg: 'abyss_biolum',
+      stem: 'scifi_tendril_cradle',
+      canopy: isVoronoi ? 'scifi_voronoi_ova_balloons' : 'scifi_biolum_plasma_globes',
+      surface: 'biolum_nodule_pustules',
+      hanging: 'tethered_scifi_lantern_globes',
+      bark: 'scifi_biolum_veins',
+      tonal: 'bioluminescent_abyss',
+      tip: 'scifi_plasma_orb',
+      colTrunk: vf.colorTrunk || '#1e1b4b',
+      colMain: vf.colorLeafMain || '#06b6d4',
+      colTip: vf.colorLeafTip || '#a855f7',
+      colFlower: vf.colorFlower || '#22d3ee',
+      colAccent: vf.colorAccent || '#f472b6',
+    });
+  }
+  if (notes.includes('monstera') || notes.includes('filodendro')) {
+    return buildFromSpec({
+      name: 'Monstera Tropical Fenestrada',
+      sci: 'Monstera fenestrata',
+      summary: 'Hojas tropicales fenestradas de gran porte sobre raíces aéreas y rizoma.',
+      base: 'mossy_forest_floor',
+      bg: 'dark_studio',
+      stem: 'creeping_rhizome_runners',
+      canopy: 'fenestrated_monstera_leaves',
+      surface: 'strangler_root_web',
+      hanging: 'aerial_root_curtains',
+      bark: 'strangler_vine_lattice',
+      tonal: 'natural_botanical',
+      basal: 'broad_rosette_leaves',
+    });
+  }
+  if (notes.includes('arce') || notes.includes('maple')) {
+    return buildFromSpec({
+      name: 'Arce Palmeado Estrellado',
+      sci: 'Acer palmatum sp.',
+      summary: 'Árbol simpodial de hojas palmeadas de 5–7 lóbulos con racimos de sámaras aladas.',
+      base: 'temperate_forest',
+      bg: 'dark_studio',
+      stem: 'sympodial_tree',
+      canopy: 'palmate_maple_star_leaves',
+      surface: 'moss_lichen_bark',
+      hanging: 'winged_samara_seeds',
+      bark: 'fissured',
+      tonal: 'natural_botanical',
+      tip: 'winged_helicoid_seed',
+    });
+  }
+  if (notes.includes('helecho') || notes.includes('palmera') || notes.includes('fern') || notes.includes('palm')) {
+    return buildFromSpec({
+      name: 'Helecho / Palmera de Frondes Pinnadas',
+      sci: 'Cyathea pinnata',
+      summary: 'Frondes pinnadas arqueadas con foliolos desplegados desde brotes en báculo.',
+      base: 'mossy_forest_floor',
+      bg: 'dark_studio',
+      stem: 'dichotomous_dragon_tree',
+      canopy: 'pinnate_fern_palm_fronds',
+      surface: 'armored_dragon_scales',
+      hanging: 'none',
+      bark: 'palm_rings',
+      tonal: 'natural_botanical',
+      basal: 'fern_fiddleheads',
+    });
+  }
+  if (notes.includes('pino') || notes.includes('conífer') || notes.includes('conifer') || notes.includes('cedro')) {
+    return buildFromSpec({
+      name: 'Conífera de Acículas y Piñas',
+      sci: 'Pinus sylvestris var.',
+      summary: 'Ramas con escobillas densas de acículas y piñas leñosas dehiscentes.',
+      base: 'alpine_granite',
+      bg: 'dark_studio',
+      stem: 'gnarled_bonsai',
+      canopy: 'conifer_needle_brushes',
+      surface: 'moss_lichen_bark',
+      hanging: 'hanging_pods_berries',
+      bark: 'pine_plates',
+      tonal: 'natural_botanical',
+    });
+  }
+  if (notes.includes('loto') || notes.includes('magnolia') || notes.includes('pasiflora')) {
+    const isPasiflora = notes.includes('pasiflora');
+    return buildFromSpec({
+      name: isPasiflora ? 'Pasiflora de Corona Radial' : 'Loto / Magnolia Imperial',
+      sci: isPasiflora ? 'Passiflora filamentosa' : 'Nelumbo imperialis',
+      summary: 'Corola floral multicapa con pétalos cóncavos y corona radial de filamentos.',
+      base: 'mossy_forest_floor',
+      bg: 'dark_studio',
+      stem: 'herbaceous_curved_stalk',
+      canopy: isPasiflora ? 'passionflower_filament_corona' : 'lotus_magnolia_corolla_crown',
+      surface: 'smooth_striated',
+      hanging: 'curling_tendrils',
+      bark: 'smooth_ash',
+      tonal: 'natural_botanical',
+      basal: 'broad_rosette_leaves',
+    });
+  }
+  if (notes.includes('carnívora') || notes.includes('carnivora') || notes.includes('jarra') || notes.includes('nepenthes')) {
+    return buildFromSpec({
+      name: 'Nepenthes de Jarras Carnívoras',
+      sci: 'Nepenthes ascidia',
+      summary: 'Liana trepadora con odres y jarras carnívoras colgantes de peristoma acanalado.',
+      base: 'mossy_forest_floor',
+      bg: 'dark_studio',
+      stem: 'spiral_volute_vine',
+      canopy: 'carnivorous_nepenthes_pitchers',
+      surface: 'braided_vines',
+      hanging: 'curling_tendrils',
+      bark: 'strangler_vine_lattice',
+      tonal: 'natural_botanical',
+    });
+  }
+  if (notes.includes('baobab') || notes.includes('botella')) {
+    return buildFromSpec({
+      name: 'Baobab Paquicaule',
+      sci: 'Adansonia pachycaulis',
+      summary: 'Tronco botella abombado de corteza nudosa con copa abierta y cápsulas.',
+      base: 'desert_dunes',
+      bg: 'daylight_arch',
+      stem: 'baobab_pachycaul_bottle',
+      canopy: 'custom_leaf_lamina',
+      surface: 'moss_lichen_bark',
+      hanging: 'hanging_pods_berries',
+      bark: 'gnarled_olive_burl',
+      tonal: 'natural_botanical',
+      h: 5.8,
+      r: 0.55,
+    });
+  }
+  if (notes.includes('mangle') || notes.includes('manglar') || notes.includes('estrangul') || notes.includes('banyan') || notes.includes('ficus')) {
+    const isMangrove = notes.includes('mangle') || notes.includes('manglar');
+    return buildFromSpec({
+      name: isMangrove ? 'Manglar de Raíces Zanco' : 'Higuera Estranguladora Banyan',
+      sci: isMangrove ? 'Rhizophora mangle' : 'Ficus benghalensis',
+      summary: 'Estructura arbórea sostenida por arcos de raíces aéreas y cortinas descendentes.',
+      base: 'aquatic_reef_seabed',
+      bg: 'coastal_sky',
+      stem: isMangrove ? 'mangrove_stilt_arch' : 'strangler_root_cage',
+      canopy: 'custom_leaf_lamina',
+      surface: 'strangler_root_web',
+      hanging: 'aerial_root_curtains',
+      bark: 'strangler_vine_lattice',
+      tonal: 'natural_botanical',
+    });
+  }
+  if (notes.includes('bambú') || notes.includes('bambu') || notes.includes('caña')) {
+    return buildFromSpec({
+      name: 'Bambú Articulado de Nudos',
+      sci: 'Bambusa nodosa',
+      summary: 'Cañas segmentadas con anillos nodales y penachos de hojas lanceoladas.',
+      base: 'temperate_forest',
+      bg: 'daylight_arch',
+      stem: 'segmented_bamboo_equisetum',
+      canopy: 'stem_hugging_leaves',
+      surface: 'smooth_striated',
+      hanging: 'none',
+      bark: 'bamboo_culm',
+      tonal: 'natural_botanical',
+    });
+  }
+  if (notes.includes('cristal') || notes.includes('cuarzo') || notes.includes('gema')) {
+    return buildFromSpec({
+      name: 'Corona Cristalina Mineral',
+      sci: 'Crystallophyta prismatica',
+      summary: 'Cúspide de prismas hexagonales translúcidos sobre tallo mineralizado.',
+      base: 'exoplanetary_crater',
+      bg: 'dark_studio',
+      stem: 'dichotomous_dragon_tree',
+      canopy: 'crystal_prism_crown',
+      surface: 'armored_dragon_scales',
+      hanging: 'none',
+      bark: 'volcanic_magma_crust',
+      tonal: 'iridescent_chitin',
+      tip: 'faceted_crystal_gem',
+      headTopo: 'crystal_spire_cluster',
+    });
+  }
+
   const isBubbleUmbelFlower =
     notes.includes('burbuja') ||
     notes.includes('bubble') ||
@@ -1132,9 +1390,7 @@ function buildVisionFallbackPayload(visionFeatures: any, userNotes?: string) {
     notes.includes('diente de le') ||
     notes.includes('allium') ||
     notes.includes('rocío') ||
-    notes.includes('esfera') ||
-    archetype === 'umbel_bubble_flower' ||
-    (typeof vf.iridescentScore === 'number' && vf.iridescentScore >= 0.52 && vf.hasGreenBasalStem);
+    archetype === 'umbel_bubble_flower';
 
   // 0. FLOR DE BURBUJAS IRIDISCENTES / UMBELA ESFÉRICA SOBRE TALLO HERBÁCEO CON HOJAS BASALES
   if (isBubbleUmbelFlower) {
@@ -1250,16 +1506,196 @@ function buildVisionFallbackPayload(visionFeatures: any, userNotes?: string) {
     );
   }
 
+  // Diverse image-driven fallback when no explicit keyword/notes matched
+  if (!notes) {
+    const ar = typeof vf.aspectRatio === 'number' ? vf.aspectRatio : 1.1;
+    const spiky = typeof vf.edgeSpikiness === 'number' ? vf.edgeSpikiness : 0.25;
+    const topDens = typeof vf.topDensityRatio === 'number' ? vf.topDensityRatio : 0.55;
+    const upW = typeof vf.upperWidthRatio === 'number' ? vf.upperWidthRatio : 0.55;
+    const lowW = typeof vf.lowerWidthRatio === 'number' ? vf.lowerWidthRatio : 0.4;
+    const darkBg = Boolean(vf.isDarkSceneBg);
+
+    if (vf.dominantHueCategory === 'cyan') {
+      return buildFromSpec({
+        name: darkBg ? 'Orbe Bioluminiscente Cian' : 'Corona Cristalina Azur',
+        sci: 'Cyanophyta luminosa',
+        summary: 'Morfología en tonos cian/turquesa extraída directamente de la imagen.',
+        base: 'exoplanetary_crater',
+        bg: darkBg ? 'abyss_biolum' : 'dark_studio',
+        stem: spiky > 0.32 ? 'scifi_tendril_cradle' : 'dichotomous_dragon_tree',
+        canopy: darkBg ? 'scifi_biolum_plasma_globes' : 'crystal_prism_crown',
+        surface: 'biolum_nodule_pustules',
+        hanging: darkBg ? 'tethered_scifi_lantern_globes' : 'none',
+        bark: 'scifi_biolum_veins',
+        tonal: darkBg ? 'bioluminescent_abyss' : 'iridescent_chitin',
+        tip: darkBg ? 'scifi_plasma_orb' : 'faceted_crystal_gem',
+        headTopo: darkBg ? 'none' : 'crystal_spire_cluster',
+      });
+    }
+
+    if (vf.dominantHueCategory === 'violet') {
+      const isRadial = spiky > 0.3 || upW > 0.52;
+      return buildFromSpec({
+        name: darkBg ? 'Flor Xenobotánica Violácea' : isRadial ? 'Pasiflora / Estrella Violácea' : 'Campanas Péndulas Violáceas',
+        sci: 'Violaceum morphologica',
+        summary: 'Morfología floral violácea/magenta adaptada a la silueta y proporciones de la imagen.',
+        base: darkBg ? 'exoplanetary_crater' : 'mossy_forest_floor',
+        bg: darkBg ? 'abyss_biolum' : 'dark_studio',
+        stem: darkBg ? 'scifi_tendril_cradle' : 'herbaceous_curved_stalk',
+        canopy: darkBg
+          ? 'scifi_voronoi_ova_balloons'
+          : isRadial
+          ? 'passionflower_filament_corona'
+          : 'hanging_bell_cluster',
+        surface: darkBg ? 'biolum_nodule_pustules' : 'smooth_striated',
+        hanging: darkBg ? 'tethered_scifi_lantern_globes' : 'curling_tendrils',
+        bark: darkBg ? 'scifi_biolum_veins' : 'smooth_ash',
+        tonal: darkBg ? 'bioluminescent_abyss' : 'natural_botanical',
+        tip: darkBg ? 'scifi_plasma_orb' : 'cupped_bell_calyx',
+        basal: darkBg ? 'none' : 'broad_rosette_leaves',
+      });
+    }
+
+    const silRadii =
+      Array.isArray(vf.silhouetteRadii) && vf.silhouetteRadii.length >= 4
+        ? vf.silhouetteRadii.map((x: any) => clamp(x, 0.14, 1.15, 0.55))
+        : undefined;
+    const upperCol = vf.colorUpper || vf.colorLeafTip || vf.colorFlower || '#ec4899';
+    const lowerCol = vf.colorLower || vf.colorTrunk || '#2e5c24';
+
+    if (vf.dominantHueCategory === 'crimson' || vf.dominantHueCategory === 'golden') {
+      const hasMultiClusters = (vf.vividClusterCount ?? 1) >= 5 && (vf.upperCapIslands ?? 1) >= 2.1;
+      if (hasMultiClusters && darkBg && (vf.dominantHueCategory === 'golden' || vf.warmOrangeRatio > 0.12)) {
+        // Handled cleanly by isFungiUmbelColony right below
+      } else if (ar < 0.98 && lowW >= upW * 0.85 && spiky > 0.25) {
+        return buildFromSpec({
+          name: 'Roseta / Suculenta Cromática de Roca',
+          sci: 'Crassulaceae rosulata',
+          summary: 'Roseta carnosa de hojas/pétalos radiales en la paleta extraída de la imagen.',
+          base: 'mossy_forest_floor',
+          bg: darkBg ? 'dark_studio' : 'daylight_arch',
+          stem: 'rosette_cluster',
+          canopy: 'succulent_fleshy_rosettes',
+          surface: 'smooth_striated',
+          hanging: 'none',
+          bark: 'smooth_ash',
+          tonal: 'natural_botanical',
+          basal: vf.hasGreenBasalStem ? 'broad_rosette_leaves' : 'none',
+          h: 3.4,
+          r: 0.36,
+          colTrunk: lowerCol,
+          colMain: vf.colorLeafMain || '#be185d',
+          colTip: upperCol,
+          colFlower: upperCol,
+          colAccent: vf.colorAccent || '#f472b6',
+        });
+      } else {
+        const isLotusLike = upW >= 0.45 || !darkBg;
+        return buildFromSpec({
+          name: isLotusLike ? 'Corola Floral / Loto Esculpido' : 'Flor Esculpida en Tallo Fino',
+          sci: 'Magnoliophyta speciosa',
+          summary: 'Tallo único limpio con follaje basal verde y corola floral orgánica en los colores exactos de la fotografía.',
+          base: 'mossy_forest_floor',
+          bg: darkBg ? 'dark_studio' : 'daylight_arch',
+          stem: 'herbaceous_curved_stalk',
+          canopy: isLotusLike ? 'lotus_magnolia_corolla_crown' : 'custom_flower_corolla',
+          surface: 'smooth_striated',
+          hanging: 'none',
+          bark: 'smooth_ash',
+          tonal: 'natural_botanical',
+          stemCount: 1,
+          lobeCount: 8,
+          petalOpenness: clamp(upW * 1.15, 0.32, 0.85, 0.55),
+          tip: 'micro_floret_star',
+          basal: vf.hasGreenBasalStem ? 'broad_rosette_leaves' : 'long_grass_blades',
+          latheProfileRadii: silRadii,
+          h: clamp(ar * 3.2, 2.8, 4.8, 3.8),
+          r: 0.24,
+          leafScale: 1.35,
+          colTrunk: vf.hasGreenBasalStem ? lowerCol : '#2e6b27',
+          colMain: vf.colorLeafMain || upperCol,
+          colTip: upperCol,
+          colFlower: vf.colorFlower || upperCol,
+          colAccent: vf.colorAccent || '#fde047',
+        });
+      }
+    }
+
+    if (typeof vf.iridescentScore === 'number' && vf.iridescentScore >= 0.42 && upW < 0.55) {
+      return buildFromSpec({
+        name: 'Espiral Cónica Xenobotánica Moteada',
+        sci: 'Xenomyxa spiralis',
+        summary: 'Espira cónica enrollada en hélice con textura moteada y tonos vivos extraídos de la imagen.',
+        base: 'mossy_forest_floor',
+        bg: darkBg ? 'dark_studio' : 'abyss_biolum',
+        stem: 'spiral_volute_vine',
+        canopy: 'procedural_lathe_head',
+        surface: 'biolum_nodule_pustules',
+        hanging: 'curling_tendrils',
+        bark: 'scifi_biolum_veins',
+        tonal: 'iridescent_chitin',
+        tip: 'spotted_spore_dome',
+        headTopo: 'revolved_lathe_chalice',
+      });
+    }
+
+    if (vf.dominantHueCategory === 'green' && archetype !== 'mossy_deadwood_trunk') {
+      if (ar < 0.95 || lowW > upW + 0.08) {
+        return buildFromSpec({
+          name: spiky > 0.32 ? 'Conífera / Roseta Acicular' : 'Roseta Suculenta Esculpida',
+          sci: 'Agavophyta compacta',
+          summary: 'Morfología verde compacta con base ancha extraída de la silueta de la imagen.',
+          base: 'alpine_granite',
+          bg: darkBg ? 'dark_studio' : 'daylight_arch',
+          stem: spiky > 0.32 ? 'gnarled_bonsai' : 'rosette_cluster',
+          canopy: spiky > 0.32 ? 'conifer_needle_brushes' : 'succulent_fleshy_rosettes',
+          surface: 'armored_dragon_scales',
+          hanging: 'none',
+          bark: 'pine_plates',
+          tonal: 'natural_botanical',
+        });
+      }
+      if (spiky > 0.34) {
+        return buildFromSpec({
+          name: 'Helecho / Fronda Pinnada Tropical',
+          sci: 'Pteridophyta pinnata',
+          summary: 'Frondes pinnadas arqueadas detectadas por el contorno dentado verde de la imagen.',
+          base: 'mossy_forest_floor',
+          bg: darkBg ? 'dark_studio' : 'daylight_arch',
+          stem: 'dichotomous_dragon_tree',
+          canopy: 'pinnate_fern_palm_fronds',
+          surface: 'moss_lichen_bark',
+          hanging: 'spanish_moss_epiphyte_drapes',
+          bark: 'palm_rings',
+          tonal: 'natural_botanical',
+          basal: 'fern_fiddleheads',
+        });
+      }
+      if (topDens > 0.56) {
+        return buildFromSpec({
+          name: 'Monstera / Hoja Tropical Fenestrada',
+          sci: 'Philodendron fenestratum',
+          summary: 'Copa foliar verde amplia con hojas fenestradas y raíces aéreas.',
+          base: 'mossy_forest_floor',
+          bg: darkBg ? 'dark_studio' : 'daylight_arch',
+          stem: 'creeping_rhizome_runners',
+          canopy: 'fenestrated_monstera_leaves',
+          surface: 'strangler_root_web',
+          hanging: 'aerial_root_curtains',
+          bark: 'strangler_vine_lattice',
+          tonal: 'natural_botanical',
+        });
+      }
+    }
+  }
+
   const isFungiUmbelColony =
     notes.includes('hongo') ||
     notes.includes('seta') ||
-    notes.includes('umbela') ||
     notes.includes('espora') ||
     notes.includes('colonia') ||
     notes.includes('micel') ||
-    archetype === 'fungi_umbel_colony' ||
-    (vf.dominantHueCategory === 'golden' &&
-      (vf.isDarkSceneBg || (typeof vf.upperCapIslands === 'number' && vf.upperCapIslands >= 1.6)));
+    archetype === 'fungi_umbel_colony';
 
   const isBudOrLotus =
     !isFungiUmbelColony &&
@@ -1405,7 +1841,7 @@ function buildVisionFallbackPayload(visionFeatures: any, userNotes?: string) {
     );
   }
 
-  // 2. CAPULLO FLORAL / COROLA ESCULTÓRICA SOBRE TALLO TRENZADO
+  // 2. CAPULLO FLORAL / COROLA ESCULTÓRICA O BULBO DE REVOLUCIÓN
   if (isBudOrLotus) {
     const openness = clamp(
       typeof vf.upperWidthRatio === 'number' ? (vf.upperWidthRatio - 0.2) * 1.1 : 0.25,
@@ -1413,48 +1849,58 @@ function buildVisionFallbackPayload(visionFeatures: any, userNotes?: string) {
       0.85,
       0.28
     );
+    const isGoldenBulb = vf.dominantHueCategory === 'golden' || vf.dominantHueCategory === 'earthy';
     return sanitizeAiPayload(
       {
-        identifiedName: 'Capullo Floral Trenzado',
-        scientificName: 'Xenolotus purpureus',
-        reasoningSummary:
-          'Capullo floral acopado de pétalos cóncavos carmesí-violáceos con estambres interiores soldado sobre un tallo de fibras leñosas trenzadas y raíces.',
-        recommendedBase: 'exoplanetary_crater',
-        recommendedBg: 'dark_studio',
+        identifiedName: isGoldenBulb ? 'Bulbo Cáliz Ámbar Esculpido' : 'Capullo Floral Trenzado',
+        scientificName: isGoldenBulb ? 'Xenobulbus aureus' : 'Xenolotus purpureus',
+        reasoningSummary: isGoldenBulb
+          ? 'Cáliz bulboso acanalado en tonos ámbar y ocre sobre base leñosa robusta con lóbulos convergentes.'
+          : 'Capullo floral acopado de pétalos cóncavos carmesí-violáceos con estambres interiores soldado sobre un tallo de fibras leñosas trenzadas y raíces.',
+        recommendedBase: isGoldenBulb ? 'mossy_forest_floor' : 'exoplanetary_crater',
+        recommendedBg: vf.isDarkSceneBg ? 'dark_studio' : 'pure_white',
         customElement: {
-          name: 'Capullo Floral sobre Tallo Trenzado',
-          stemStructure: 'gnarled_bonsai',
-          canopyElement: 'custom_flower_corolla',
-          surfaceElement: 'braided_vines',
-          hangingElement: 'curling_tendrils',
+          name: isGoldenBulb ? 'Bulbo Cáliz Esculpido sobre Base Caudex' : 'Capullo Floral sobre Tallo Trenzado',
+          stemStructure: isGoldenBulb ? 'baobab_pachycaul_bottle' : 'gnarled_bonsai',
+          canopyElement: isGoldenBulb ? 'custom_spline_leaf_crown' : 'custom_flower_corolla',
+          surfaceElement: isGoldenBulb ? 'armored_dragon_scales' : 'braided_vines',
+          hangingElement: isGoldenBulb ? 'none' : 'curling_tendrils',
+          synthesizedHeadTopology: isGoldenBulb ? 'spline_petal_corona' : 'none',
+          petalContourProfile: isGoldenBulb
+            ? [0.22, 0.78, 1.05, 0.95, 0.68, 0.34, 0.08]
+            : [0.14, 0.62, 0.98, 0.72, 0.94, 0.42, 0.08],
+          petalCupping: isGoldenBulb ? 0.68 : 0.38,
+          petalTwistDeg: isGoldenBulb ? 8 : 14,
+          petalMarginWave: isGoldenBulb ? 0.12 : 0.16,
           spiralTurns: 1.25,
           spiralArms: 1,
           stemCount: 1,
-          trunkBentS: clamp(vf.trunkSCurve, 0.2, 0.75, 0.38),
-          petalOpenness: openness,
-          thornDensity: 0.45,
-          thornLength: 1.0,
-          filamentCount: 14,
+          trunkBentS: clamp(vf.trunkSCurve, 0.15, 0.65, 0.25),
+          petalOpenness: isGoldenBulb ? 0.22 : openness,
+          thornDensity: 0.25,
+          thornLength: 0.8,
+          filamentCount: isGoldenBulb ? 0 : 14,
           filamentLength: 0.9,
-          padLayers: 1,
-          lobeCount: 9,
+          padLayers: isGoldenBulb ? 2 : 1,
+          lobeCount: isGoldenBulb ? 6 : 9,
           cupDepth: 0.78,
         },
         params: {
           engine: 'composed_custom',
           foliageType: 'ai_custom_element',
+          barkType: isGoldenBulb ? 'gnarled_olive_burl' : 'fibrous_redwood',
           tonalMode: 'natural_botanical',
-          height: 4.8,
-          radius: 0.36,
-          gnarl: 0.52,
+          height: isGoldenBulb ? 3.8 : 4.8,
+          radius: isGoldenBulb ? 0.48 : 0.36,
+          gnarl: 0.42,
           leafScale: 1.25,
           leafDensity: 5,
           showRoots: true,
-          colorTrunk: vf.colorTrunk || '#4a3528',
-          colorLeafMain: vf.colorLeafMain || '#9f1239',
-          colorLeafTip: vf.colorLeafTip || '#fb7185',
-          colorFlower: vf.colorFlower || '#e11d48',
-          colorAccent: vf.colorAccent || '#fda4af',
+          colorTrunk: vf.colorTrunk || (isGoldenBulb ? '#4a3c24' : '#4a3528'),
+          colorLeafMain: vf.colorLeafMain || (isGoldenBulb ? '#d97706' : '#9f1239'),
+          colorLeafTip: vf.colorLeafTip || (isGoldenBulb ? '#fbbf24' : '#fb7185'),
+          colorFlower: vf.colorFlower || (isGoldenBulb ? '#f59e0b' : '#e11d48'),
+          colorAccent: vf.colorAccent || (isGoldenBulb ? '#fef08a' : '#fda4af'),
         },
       },
       vf
@@ -1891,7 +2337,7 @@ async function startServer() {
         : '';
 
     const visionHint = visionFeatures
-      ? `\nAnálisis morfológico 2D de la imagen: arquetipoDetectado=${visionFeatures.detectedArchetype}, scoreIridiscencia=${visionFeatures.iridescentScore ?? 0}, talloVerdeBasal=${visionFeatures.hasGreenBasalStem ?? false}, tronco=${visionFeatures.colorTrunk}, colorPrincipal=${visionFeatures.colorLeafMain}, colorPunta=${visionFeatures.colorLeafTip}, colorFlor=${visionFeatures.colorFlower}, acento=${visionFeatures.colorAccent}.`
+      ? `\nAnálisis morfológico 2D de la imagen: arquetipoDetectado=${visionFeatures.detectedArchetype}, proporcionAltoAncho=${visionFeatures.aspectRatio}, perfilAnchuraSilueta=${JSON.stringify(visionFeatures.silhouetteRadii || [])}, colorSuperior=${visionFeatures.colorUpper || visionFeatures.colorLeafTip}, colorInferior=${visionFeatures.colorLower || visionFeatures.colorTrunk}, scoreIridiscencia=${visionFeatures.iridescentScore ?? 0}, talloVerdeBasal=${visionFeatures.hasGreenBasalStem ?? false}, tronco=${visionFeatures.colorTrunk}, colorPrincipal=${visionFeatures.colorLeafMain}, colorPunta=${visionFeatures.colorLeafTip}, colorFlor=${visionFeatures.colorFlower}, acento=${visionFeatures.colorAccent}.`
       : '';
 
     let customPartsContext = '';
@@ -1913,6 +2359,60 @@ async function startServer() {
       return;
     }
 
+    // Helper to query a local Ollama model (used explicitly or as auto-fallback when Cloud fails)
+    const runOllamaVisionChat = async (ollamaBase: string, ollamaModel: string) => {
+      const compactLocalSystemPrompt = `Eres un diseñador botánico 3D. Analiza la imagen y devuelve SOLO JSON válido.\n${LOCAL_JSON_PROMPT_TEMPLATE}${customPartsContext}`;
+      const sendOllamaChat = async (withImage: boolean) => {
+        return fetch(`${ollamaBase}/api/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: ollamaModel,
+            stream: false,
+            format: 'json',
+            options: { temperature, num_predict: 700, num_ctx: 8192 },
+            messages: [
+              { role: 'system', content: compactLocalSystemPrompt },
+              withImage
+                ? {
+                    role: 'user',
+                    content: `Describe la planta/árbol/estructura exacta de esta imagen y devuelve el JSON de configuración 3D.${visionHint}${notesBlock}`,
+                    images: [cleanBase64],
+                  }
+                : {
+                    role: 'user',
+                    content: `Diseña en JSON 3D una planta/árbol acorde a estas mediciones y notas (el modelo actual es solo texto):${visionHint}${notesBlock}`,
+                  },
+            ],
+          }),
+          signal: AbortSignal.timeout(120000),
+        });
+      };
+
+      let ollamaRes = await sendOllamaChat(true);
+      let usedTextOnlyFallback = false;
+
+      if (!ollamaRes.ok) {
+        const errText = await ollamaRes.text().catch(() => '');
+        if (ollamaRes.status === 400 && errText.toLowerCase().includes('multimodal')) {
+          ollamaRes = await sendOllamaChat(false);
+          usedTextOnlyFallback = true;
+          if (!ollamaRes.ok) {
+            const retryErr = await ollamaRes.text().catch(() => '');
+            throw new Error(`HTTP ${ollamaRes.status}: ${retryErr.slice(0, 120)}`);
+          }
+        } else {
+          throw new Error(`HTTP ${ollamaRes.status}: ${errText.slice(0, 120)}`);
+        }
+      }
+
+      const ollamaData: any = await ollamaRes.json();
+      const rawContent = ollamaData?.message?.content || ollamaData?.response || '';
+      const parsed = extractJsonFromText(rawContent);
+      const sanitized = sanitizeAiPayload(parsed, visionFeatures);
+      return { sanitized, usedTextOnlyFallback };
+    };
+
     // ─────────────────────────────────────────────────────────────────────────
     // OPTION 2: OLLAMA LOCAL VISION ENGINE (http://127.0.0.1:11434)
     // ─────────────────────────────────────────────────────────────────────────
@@ -1928,43 +2428,16 @@ async function startServer() {
           : 'llama3.2-vision';
 
       try {
-        const ollamaRes = await fetch(`${ollamaBase}/api/chat`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: ollamaModel,
-            stream: false,
-            format: 'json',
-            options: { temperature },
-            messages: [
-              {
-                role: 'system',
-                content: `${BOTANICAL_SYSTEM_PROMPT}\n\n${LOCAL_JSON_PROMPT_TEMPLATE}${customPartsContext}`,
-              },
-              {
-                role: 'user',
-                content: `Analiza esta imagen de planta/árbol y devuelve el JSON de configuración 3D.${visionHint}${notesBlock}`,
-                images: [cleanBase64],
-              },
-            ],
-          }),
-          signal: AbortSignal.timeout(45000),
+        const { sanitized, usedTextOnlyFallback } = await runOllamaVisionChat(ollamaBase, ollamaModel);
+        res.json({
+          result: sanitized,
+          providerUsed: usedTextOnlyFallback
+            ? `Ollama (${ollamaModel} · solo texto)`
+            : `Ollama (${ollamaModel})`,
         });
-
-        if (!ollamaRes.ok) {
-          const errText = await ollamaRes.text().catch(() => '');
-          throw new Error(
-            `Ollama (${ollamaModel}) respondió con HTTP ${ollamaRes.status}: ${errText.slice(0, 140)}`
-          );
-        }
-
-        const ollamaData: any = await ollamaRes.json();
-        const rawContent = ollamaData?.message?.content || ollamaData?.response || '';
-        const parsed = extractJsonFromText(rawContent);
-        const sanitized = sanitizeAiPayload(parsed, visionFeatures);
-        res.json({ result: sanitized, providerUsed: `Ollama (${ollamaModel})` });
         return;
       } catch (err: any) {
+        const reason = String(err?.message || 'error').slice(0, 60);
         console.warn('Error llamando a Ollama desde servidor:', err?.message);
         if (!autoFallback) {
           res.status(502).json({
@@ -1975,7 +2448,7 @@ async function startServer() {
         const synthesized = buildVisionFallbackPayload(visionFeatures, userNotes);
         res.json({
           result: synthesized,
-          providerUsed: 'Visión Local (Fallback tras Ollama no disponible)',
+          providerUsed: `Visión Local (Ollama: ${reason})`,
         });
         return;
       }
@@ -2061,10 +2534,38 @@ async function startServer() {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // OPTION 4: CLOUD AI ENGINE (Default)
+    // OPTION 4: CLOUD AI ENGINE (Default) -> auto-fallback to local Ollama if available
     // ─────────────────────────────────────────────────────────────────────────
+    const tryAutoLocalOllama = async (): Promise<boolean> => {
+      const ollamaBase = (process.env.OLLAMA_HOST || 'http://127.0.0.1:11434').replace(/\/+$/, '');
+      try {
+        const tagsRes = await fetch(`${ollamaBase}/api/tags`, {
+          signal: AbortSignal.timeout(1200),
+        });
+        if (!tagsRes.ok) return false;
+        const tagsData: any = await tagsRes.json();
+        const models: string[] = Array.isArray(tagsData?.models)
+          ? tagsData.models.map((m: any) => String(m?.name || m?.model || '')).filter(Boolean)
+          : [];
+        if (models.length === 0) return false;
+        const preferred =
+          models.find((m) => /vision|llava|vl|minicpm|gemma3|moondream/i.test(m)) || models[0];
+        const { sanitized, usedTextOnlyFallback } = await runOllamaVisionChat(ollamaBase, preferred);
+        res.json({
+          result: sanitized,
+          providerUsed: usedTextOnlyFallback
+            ? `Ollama Auto (${preferred} · texto)`
+            : `Ollama Auto (${preferred})`,
+        });
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
+      if (await tryAutoLocalOllama()) return;
       const fallback = buildVisionFallbackPayload(visionFeatures, userNotes);
       res.json({ result: fallback, providerUsed: 'Visión Local (Sin clave Cloud)' });
       return;
@@ -2080,26 +2581,31 @@ async function startServer() {
     let lastErr: any = null;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const response = await ai.models.generateContent({
-          model: 'gemini-4-hydrogen',
-          contents: [
-            {
-              inlineData: {
-                mimeType: safeMime,
-                data: cleanBase64,
+        const response = await Promise.race([
+          ai.models.generateContent({
+            model: 'gemini-4-hydrogen',
+            contents: [
+              {
+                inlineData: {
+                  mimeType: safeMime,
+                  data: cleanBase64,
+                },
               },
+              {
+                text: `Analiza esta imagen y construye un elemento 3D a medida combinando stemStructure, canopyElement, surfaceElement y hangingElement en Arborea Studio Pro.${visionHint}${notesBlock}`,
+              },
+            ],
+            config: {
+              systemInstruction: `${BOTANICAL_SYSTEM_PROMPT}${customPartsContext}`,
+              responseMimeType: 'application/json',
+              responseSchema: PLANT_DESIGN_SCHEMA,
+              thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
             },
-            {
-              text: `Analiza esta imagen y construye un elemento 3D a medida combinando stemStructure, canopyElement, surfaceElement y hangingElement en Arborea Studio Pro.${visionHint}${notesBlock}`,
-            },
-          ],
-          config: {
-            systemInstruction: `${BOTANICAL_SYSTEM_PROMPT}${customPartsContext}`,
-            responseMimeType: 'application/json',
-            responseSchema: PLANT_DESIGN_SCHEMA,
-            thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-          },
-        });
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Timeout esperando respuesta de Cloud IA (9s)')), 9000)
+          ),
+        ]);
 
         const rawText = response.text;
         if (rawText) {
@@ -2111,25 +2617,38 @@ async function startServer() {
       } catch (err: any) {
         lastErr = err;
         console.warn(`Intento ${attempt + 1} en /api/ai/design-plant:`, err?.status || err?.message);
+        if (String(err?.message || '').includes('Timeout')) break;
         if (attempt === 0) {
           await new Promise((r) => setTimeout(r, 450));
         }
       }
     }
 
-    console.warn('Usando síntesis morfológica por visión artificial tras saturación 503:', lastErr?.message);
+    if (await tryAutoLocalOllama()) return;
+    console.warn('Usando síntesis morfológica por visión artificial tras fallo Cloud:', lastErr?.message);
     const synthesized = buildVisionFallbackPayload(visionFeatures, userNotes);
-    res.json({ result: synthesized, providerUsed: 'Síntesis Morfológica Local' });
+    const errTag = lastErr?.status
+      ? ` (Cloud ${lastErr.status})`
+      : String(lastErr?.message || '').includes('Timeout')
+      ? ' (Cloud Timeout)'
+      : '';
+    res.json({ result: synthesized, providerUsed: `Síntesis Morfológica Local${errTag}` });
   });
 
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.resolve(__dirname, 'dist');
+    const candidates = [
+      path.resolve(process.cwd(), 'dist'),
+      path.resolve(currentDir, 'dist'),
+      path.resolve(currentDir, '..', 'dist'),
+    ];
+    const distPath = candidates.find((p) => fs.existsSync(path.join(p, 'index.html'))) || candidates[0];
     app.use(express.static(distPath));
     app.get('*', (_req: Request, res: Response) => {
       res.sendFile(path.join(distPath, 'index.html'));

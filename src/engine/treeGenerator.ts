@@ -1764,12 +1764,10 @@ export function generateProceduralTree(
   }
 
   const bbox = new THREE.Box3().setFromObject(group);
-  const treeHeightM = bbox.isEmpty()
-    ? p.height
-    : Math.round((bbox.max.y - Math.min(0, bbox.min.y)) * 10) / 10;
-  const crownDiameterM = bbox.isEmpty()
-    ? p.height * 0.7
-    : Math.round(Math.max(bbox.max.x - bbox.min.x, bbox.max.z - bbox.min.z) * 10) / 10;
+  const rawH = bbox.isEmpty() ? p.height : Math.round((bbox.max.y - Math.min(0, bbox.min.y)) * 10) / 10;
+  const rawD = bbox.isEmpty() ? p.height * 0.7 : Math.round(Math.max(bbox.max.x - bbox.min.x, bbox.max.z - bbox.min.z) * 10) / 10;
+  const treeHeightM = Number.isFinite(rawH) && rawH > 0 ? rawH : p.height;
+  const crownDiameterM = Number.isFinite(rawD) && rawD > 0 ? rawD : p.height * 0.7;
 
   const generationTimeMs = Math.round((performance.now() - t0) * 10) / 10;
 

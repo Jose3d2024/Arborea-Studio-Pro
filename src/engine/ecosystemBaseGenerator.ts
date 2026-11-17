@@ -399,8 +399,8 @@ export function generateEcosystemBaseGroup(
   group.name = `EcosystemBase_${resolved}`;
 
   const scaleMult = quality.ecosystemBaseScale ?? 1.0;
-  const rawBaseR = Math.max(modelRadius * 1.45, modelHeight * 0.58, 2.3);
-  const baseRadius = THREE.MathUtils.clamp(rawBaseR, 2.4, 9.6) * scaleMult;
+  // Keep base radius independent of plant height/crown sliders so resizing the plant only scales the plant
+  const baseRadius = THREE.MathUtils.clamp(3.6 * scaleMult, 1.4, 9.6);
 
   const isClean = resolved === 'clean_pedestal' || quality.viewportMode === 'clay';
 
