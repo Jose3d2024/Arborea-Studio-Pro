@@ -69,6 +69,7 @@ const VALID_CANOPY_ELEMENTS = new Set([
   'heliconia_bract_candelabra',
   'dehiscent_seed_pods_coronas',
   'carnivorous_nepenthes_pitchers',
+  'custom_spline_leaf_crown',
 ]);
 
 const VALID_SYNTH_HEAD_TOPOLOGIES = new Set([
@@ -77,6 +78,7 @@ const VALID_SYNTH_HEAD_TOPOLOGIES = new Set([
   'hanging_bell_raceme',
   'revolved_lathe_chalice',
   'crystal_spire_cluster',
+  'spline_petal_corona',
   'none',
 ]);
 
@@ -343,7 +345,8 @@ Tu misión es analizar la imagen subida y elegir con precisión quirúrgica de l
    - "radiating_floret_head": Cabezuela floral radiante en estrella (Protea / Girasol / Aster).
    - "hanging_bell_cluster": Racimo de flores acampanadas colgantes.
    - "crystal_prism_crown": Corona geoda de prismas hexagonales.
-   - "procedural_lathe_head": Cáliz/urna esculpido por revolución.
+   - "procedural_lathe_head": Cáliz/urna esculpido por revolución libre mediante "latheProfileRadii" (4–8 radios).
+   - "custom_spline_leaf_crown": Corona/roseta de hojas, pétalos o brácteas inéditas esculpidas por curva Spline libre mediante "petalContourProfile" (4–8 anchuras), "petalCupping", "petalTwistDeg" y "petalMarginWave".
    - "custom_fungi_cap": Sombrero fúngico en domo con láminas y motas 3D.
    - "custom_flower_corolla": Capullo floral cerrado/entreabierto.
    - "custom_leaf_lamina": Láminas foliares nervadas a medida.
@@ -416,6 +419,13 @@ const PLANT_DESIGN_SCHEMA = {
           type: Type.ARRAY,
           items: { type: Type.NUMBER },
         },
+        petalContourProfile: {
+          type: Type.ARRAY,
+          items: { type: Type.NUMBER },
+        },
+        petalCupping: { type: Type.NUMBER },
+        petalTwistDeg: { type: Type.NUMBER },
+        petalMarginWave: { type: Type.NUMBER },
         aiNewPartsReport: { type: Type.STRING },
         spiralTurns: { type: Type.NUMBER },
         spiralArms: { type: Type.INTEGER },
@@ -705,6 +715,8 @@ function sanitizeAiPayload(raw: any, visionFeatures?: any) {
       ? 'crystal_spire_cluster'
       : canopyElement === 'procedural_lathe_head'
       ? 'revolved_lathe_chalice'
+      : canopyElement === 'custom_spline_leaf_crown'
+      ? 'spline_petal_corona'
       : 'none'
   );
 
@@ -782,6 +794,10 @@ function sanitizeAiPayload(raw: any, visionFeatures?: any) {
     ? ce.latheProfileRadii.map((n: any) => clamp(Number(n), 0.08, 1.35, 0.5)).slice(0, 8)
     : [0.16, 0.68, 0.88, 0.56, 0.78, 0.92];
 
+  const rawPetalContour = Array.isArray(ce.petalContourProfile)
+    ? ce.petalContourProfile.map((n: any) => clamp(Number(n), 0.02, 1.45, 0.5)).slice(0, 8)
+    : [0.14, 0.62, 0.98, 0.72, 0.94, 0.42, 0.08];
+
   const defaultNewPartsReport =
     canopyElement === 'moss_velvet_mantle'
       ? 'Síntesis 3D de nuevas partes: 1) Tronco de madera envejecida en doble curva S serpentina con fibras helicoidales, 2) Muñones leñosos apicales y laterales desgastados sin hojas planas, 3) Manto de cojines y micro-filamentos de musgo briófito verde adheridos a las crestas de la corteza.'
@@ -797,6 +813,8 @@ function sanitizeAiPayload(raw: any, visionFeatures?: any) {
       ? 'Síntesis 3D de nuevas partes: Corona geoda de prismas hexagonales biselados con refracción iridiscente.'
       : canopyElement === 'procedural_lathe_head'
       ? 'Síntesis 3D de nuevas partes: Cáliz/urna esculpido por revolución a medida con estambres emergentes.'
+      : canopyElement === 'custom_spline_leaf_crown'
+      ? 'Síntesis 3D de nuevas partes: Corona/hojas de contorno libre esculpidas por curva Spline 3D con acopamiento, torsión y ondulado marginal.'
       : 'Combinación anatómica 3D soldada de tronco, corteza, copa modular y elementos colgantes.';
 
   const customElement = {
@@ -861,6 +879,11 @@ function sanitizeAiPayload(raw: any, visionFeatures?: any) {
         : vf.iridescentScore || 0.25
     ),
     latheProfileRadii: rawLatheRadii.length >= 4 ? rawLatheRadii : [0.16, 0.68, 0.88, 0.56, 0.78, 0.92],
+    petalContourProfile:
+      rawPetalContour.length >= 4 ? rawPetalContour : [0.14, 0.62, 0.98, 0.72, 0.94, 0.42, 0.08],
+    petalCupping: clamp(ce.petalCupping, -0.65, 0.95, 0.38),
+    petalTwistDeg: clamp(ce.petalTwistDeg, 0, 95, 14),
+    petalMarginWave: clamp(ce.petalMarginWave, 0, 0.5, 0.16),
     aiNewPartsReport:
       typeof ce.aiNewPartsReport === 'string' && ce.aiNewPartsReport.trim()
         ? ce.aiNewPartsReport.trim().slice(0, 280)
@@ -1716,12 +1739,17 @@ const LOCAL_JSON_PROMPT_TEMPLATE = `Devuelve EXCLUSIVAMENTE un objeto JSON váli
   "customElement": {
     "name": "Nombre del elemento",
     "stemStructure": "serpentine_mossy_deadwood | strangler_root_cage | baobab_pachycaul_bottle | mangrove_stilt_arch | dichotomous_dragon_tree | braided_helix_trunks | segmented_bamboo_equisetum | hollow_ancient_snag | creeping_rhizome_runners | scifi_tendril_cradle | herbaceous_curved_stalk | multi_stalk_umbel_colony | sympodial_tree | gnarled_bonsai | weeping_willow | thorny_horn_crown | spiral_volute_vine | rosette_cluster",
-    "canopyElement": "moss_velvet_mantle | scifi_biolum_plasma_globes | scifi_voronoi_ova_balloons | fenestrated_monstera_leaves | palmate_maple_star_leaves | pinnate_fern_palm_fronds | succulent_fleshy_rosettes | conifer_needle_brushes | lotus_magnolia_corolla_crown | passionflower_filament_corona | heliconia_bract_candelabra | dehiscent_seed_pods_coronas | carnivorous_nepenthes_pitchers | spherical_bubble_umbel | radiating_floret_head | hanging_bell_cluster | crystal_prism_crown | procedural_lathe_head | custom_fungi_cap | custom_leaf_lamina | custom_flower_corolla | cloud_bonsai_pads | thorn_spur_clusters | stem_hugging_leaves",
+    "canopyElement": "moss_velvet_mantle | scifi_biolum_plasma_globes | scifi_voronoi_ova_balloons | fenestrated_monstera_leaves | palmate_maple_star_leaves | pinnate_fern_palm_fronds | succulent_fleshy_rosettes | conifer_needle_brushes | lotus_magnolia_corolla_crown | passionflower_filament_corona | heliconia_bract_candelabra | dehiscent_seed_pods_coronas | carnivorous_nepenthes_pitchers | custom_spline_leaf_crown | spherical_bubble_umbel | radiating_floret_head | hanging_bell_cluster | crystal_prism_crown | procedural_lathe_head | custom_fungi_cap | custom_leaf_lamina | custom_flower_corolla | cloud_bonsai_pads | thorn_spur_clusters | stem_hugging_leaves",
     "surfaceElement": "strangler_root_web | rose_hooked_prickles | cactus_areole_spine_bursts | armored_dragon_scales | shelf_fungi_conks | biolum_nodule_pustules | smooth_striated | moss_lichen_bark | braided_vines | curved_thorns_spines",
     "hangingElement": "aerial_root_curtains | winged_samara_seeds | tethered_scifi_lantern_globes | spanish_moss_epiphyte_drapes | thorny_barbed_whips | weeping_filaments | curling_tendrils | mycelial_fuzz | hanging_pods_berries | none",
-    "synthesizedHeadTopology": "spherical_umbel_rays | layered_petal_starburst | hanging_bell_raceme | revolved_lathe_chalice | crystal_spire_cluster | none",
+    "synthesizedHeadTopology": "spherical_umbel_rays | layered_petal_starburst | hanging_bell_raceme | revolved_lathe_chalice | crystal_spire_cluster | spline_petal_corona | none",
     "synthesizedTipPrimitive": "bryophyte_moss_pad | scifi_plasma_orb | spiked_seed_burr | winged_helicoid_seed | crowned_pomegranate_pod | recurved_thorn_claw | feathery_pappus_plume | sucker_tentacle_cup | iridescent_bubble | dewy_droplet | micro_floret_star | cupped_bell_calyx | faceted_crystal_gem | spotted_spore_dome | lanceolate_blade | none",
     "synthesizedBasalFoliage": "long_grass_blades | broad_rosette_leaves | spiny_succulent_claws | fern_fiddleheads | baby_umbel_sprouts | none",
+    "latheProfileRadii": [0.16, 0.68, 0.88, 0.56, 0.78, 0.92],
+    "petalContourProfile": [0.14, 0.62, 0.98, 0.72, 0.94, 0.42, 0.08],
+    "petalCupping": 0.38,
+    "petalTwistDeg": 14,
+    "petalMarginWave": 0.16,
     "umbelRayCount": 76,
     "umbelSphereRatio": 0.9,
     "tipBubbleScale": 1.1,
@@ -1839,7 +1867,7 @@ async function startServer() {
   });
 
   app.post('/api/ai/design-plant', async (req: Request, res: Response) => {
-    const { imageBase64, mimeType, userNotes, visionFeatures, aiConfig } = req.body || {};
+    const { imageBase64, mimeType, userNotes, visionFeatures, aiConfig, customParts } = req.body || {};
     if (typeof imageBase64 !== 'string' || imageBase64.length < 32) {
       res.status(400).json({ error: 'Debes adjuntar una imagen válida de la planta o árbol.' });
       return;
@@ -1865,6 +1893,15 @@ async function startServer() {
     const visionHint = visionFeatures
       ? `\nAnálisis morfológico 2D de la imagen: arquetipoDetectado=${visionFeatures.detectedArchetype}, scoreIridiscencia=${visionFeatures.iridescentScore ?? 0}, talloVerdeBasal=${visionFeatures.hasGreenBasalStem ?? false}, tronco=${visionFeatures.colorTrunk}, colorPrincipal=${visionFeatures.colorLeafMain}, colorPunta=${visionFeatures.colorLeafTip}, colorFlor=${visionFeatures.colorFlower}, acento=${visionFeatures.colorAccent}.`
       : '';
+
+    let customPartsContext = '';
+    if (Array.isArray(customParts) && customParts.length > 0) {
+      customPartsContext = `\n\n=== BIBLIOTECA MODULAR PERSONALIZADA DEL USUARIO (${Math.min(16, customParts.length)} piezas) ===\nSi la imagen encaja con alguna de estas piezas creadas/guardadas por el usuario o por la IA anteriormente, puedes reutilizar o combinar sus valores exactos en "customElement":\n`;
+      customParts.slice(0, 16).forEach((part: any) => {
+        const el = part?.element || {};
+        customPartsContext += `- [${part?.name || el?.name || 'Parte'}]: stemStructure=${el.stemStructure}, canopyElement=${el.canopyElement}, surfaceElement=${el.surfaceElement}, hangingElement=${el.hangingElement}, synthesizedHeadTopology=${el.synthesizedHeadTopology || 'none'}, synthesizedTipPrimitive=${el.synthesizedTipPrimitive || 'none'}, synthesizedBasalFoliage=${el.synthesizedBasalFoliage || 'none'}, latheProfileRadii=${JSON.stringify(el.latheProfileRadii || [])}, petalContourProfile=${JSON.stringify(el.petalContourProfile || [])}, petalCupping=${el.petalCupping ?? 0.38}, petalTwistDeg=${el.petalTwistDeg ?? 14}, petalMarginWave=${el.petalMarginWave ?? 0.16}, umbelRayCount=${el.umbelRayCount ?? 64}, petalOpenness=${el.petalOpenness ?? 0.4}, thornDensity=${el.thornDensity ?? 0}\n`;
+      });
+    }
 
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1902,7 +1939,7 @@ async function startServer() {
             messages: [
               {
                 role: 'system',
-                content: `${BOTANICAL_SYSTEM_PROMPT}\n\n${LOCAL_JSON_PROMPT_TEMPLATE}`,
+                content: `${BOTANICAL_SYSTEM_PROMPT}\n\n${LOCAL_JSON_PROMPT_TEMPLATE}${customPartsContext}`,
               },
               {
                 role: 'user',
@@ -1973,7 +2010,7 @@ async function startServer() {
             messages: [
               {
                 role: 'system',
-                content: `${BOTANICAL_SYSTEM_PROMPT}\n\n${LOCAL_JSON_PROMPT_TEMPLATE}`,
+                content: `${BOTANICAL_SYSTEM_PROMPT}\n\n${LOCAL_JSON_PROMPT_TEMPLATE}${customPartsContext}`,
               },
               {
                 role: 'user',
@@ -2057,7 +2094,7 @@ async function startServer() {
             },
           ],
           config: {
-            systemInstruction: BOTANICAL_SYSTEM_PROMPT,
+            systemInstruction: `${BOTANICAL_SYSTEM_PROMPT}${customPartsContext}`,
             responseMimeType: 'application/json',
             responseSchema: PLANT_DESIGN_SCHEMA,
             thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },

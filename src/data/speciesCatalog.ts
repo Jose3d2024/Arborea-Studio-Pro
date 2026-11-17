@@ -188,6 +188,7 @@ export const CANOPY_ELEMENT_META: Record<CanopyElementType, { label: string }> =
   heliconia_bract_candelabra:    { label: '22. ✨ Corona de Brácteas Escalonadas en Quilla (Ave del Paraíso)' },
   dehiscent_seed_pods_coronas:   { label: '23. ✨ Cápsulas de Semillas Abiertas, Piñas y Vainas con Semillas' },
   carnivorous_nepenthes_pitchers:{ label: '24. ✨ Odres / Trampas Carnívoras con Peristoma y Opérculo' },
+  custom_spline_leaf_crown:      { label: '25. ✨ Hoja / Pétalo Esculpido por Curva Spline IA' },
 };
 
 export const SYNTHESIZED_TIP_META: Record<SynthesizedTipPrimitive, { label: string }> = {

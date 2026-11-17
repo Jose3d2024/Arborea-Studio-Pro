@@ -105,10 +105,16 @@ import {
   loadAiProviderConfig,
   saveAiProviderConfig,
   detectLocalAiModels,
+  SavedPartModule,
+  loadSavedPartsModules,
+  saveCustomPartModule,
+  deleteSavedPartModule,
+  deleteCustomElementFromApp,
 } from './utils/aiPlantDesigner';
 
 type ActiveWorkspaceTab =
   | 'library'
+  | 'ai_parts'
   | 'catalog'
   | 'aquatic'
   | 'moss_fungi'
@@ -251,6 +257,10 @@ export default function App() {
   const [customElements, setCustomElements] = useState<CustomBotanicalElement[]>(() =>
     loadSavedCustomElements()
   );
+  const [savedPartModules, setSavedPartModules] = useState<SavedPartModule[]>(() =>
+    loadSavedPartsModules()
+  );
+  const [newPartNameInput, setNewPartNameInput] = useState<string>('');
   const [customSpeciesList, setCustomSpeciesList] = useState<SpeciesPreset[]>(() =>
     loadSavedCustomSpecies()
   );
@@ -332,6 +342,10 @@ export default function App() {
         seed: prev.seed,
         sunElevation: prev.sunElevation,
         sunAzimuth: prev.sunAzimuth,
+        representationStyle:
+          found.params.representationStyle && found.params.representationStyle !== 'botanical_leaves'
+            ? found.params.representationStyle
+            : prev.representationStyle,
       }));
     }
   };
@@ -616,9 +630,10 @@ export default function App() {
         aiUserNotes,
         aiProviderConfig
       );
-      // Refresh permanent custom elements & species lists saved by designPlantFromImageWithAI
+      // Refresh permanent custom elements, species & auto-saved modular parts lists
       setCustomElements(loadSavedCustomElements());
       setCustomSpeciesList(loadSavedCustomSpecies());
+      setSavedPartModules(loadSavedPartsModules());
 
       setActiveSavedModelId(null);
       setActiveHybridInfo(null);
@@ -1037,6 +1052,22 @@ export default function App() {
             </div>
           </details>
 
+          {/* Direct 7-Styles Quick Switcher right in the Top Bar */}
+          <select
+            value={params.representationStyle}
+            onChange={(e) =>
+              updateParam('representationStyle', e.target.value as RepresentationStyle)
+            }
+            title="Los 7 Estilos de Geometría 3D (Botánico, Metaballs, Geodésico, Fibonacci, Placas BIM, Envolvente, Voxel)"
+            className="bg-[#141e2d] border border-emerald-500/45 rounded px-2 py-1 text-[11px] font-medium text-emerald-300 focus:outline-none focus:border-emerald-400 cursor-pointer"
+          >
+            {(Object.keys(REPRESENTATION_STYLE_META) as RepresentationStyle[]).map((st, idx) => (
+              <option key={st} value={st}>
+                {idx + 1}. {REPRESENTATION_STYLE_META[st].short}
+              </option>
+            ))}
+          </select>
+
           <button
             onClick={generateHybridVegetation}
             className="px-2.5 py-1 rounded bg-indigo-500/20 hover:bg-indigo-500/35 text-indigo-200 border border-indigo-400/50 font-semibold flex items-center gap-1 cursor-pointer transition-colors whitespace-nowrap"
@@ -1133,12 +1164,12 @@ export default function App() {
       <div className="flex-1 flex overflow-hidden relative">
         {sidebarOpen && (
           <aside className="w-[375px] shrink-0 h-full bg-[#0e151f] border-r border-slate-800/90 flex flex-col z-20">
-            {/* Ultra-Compact Sidebar Top Bar: 3 Main Tabs + 1 Dropdown for Secondary Sections */}
+            {/* Ultra-Compact Sidebar Top Bar: 4 Main Tabs + Dropdown for Secondary Sections */}
             <div className="p-2 bg-[#0c121b] border-b border-slate-800/80 flex flex-col gap-1.5 shrink-0">
-              <div className="flex items-center gap-1 text-[11px] font-medium">
+              <div className="grid grid-cols-3 gap-1 text-[11px] font-medium">
                 <button
                   onClick={() => setActiveTab('foliage')}
-                  className={`flex-1 px-2 py-1.5 rounded flex items-center justify-center gap-1 transition-colors cursor-pointer whitespace-nowrap ${
+                  className={`px-2 py-1.5 rounded flex items-center justify-center gap-1 transition-colors cursor-pointer whitespace-nowrap ${
                     activeTab === 'foliage'
                       ? 'bg-emerald-500 text-slate-950 font-semibold'
                       : 'bg-[#14222b] text-emerald-300 border border-emerald-500/35 hover:bg-[#192b36]'
@@ -1163,8 +1194,23 @@ export default function App() {
                 </button>
 
                 <button
-                  onClick={() => setActiveTab('catalog')}
+                  onClick={() => setActiveTab('ai_parts')}
                   className={`px-2 py-1.5 rounded flex items-center justify-center gap-1 transition-colors cursor-pointer whitespace-nowrap ${
+                    activeTab === 'ai_parts'
+                      ? 'bg-emerald-500 text-slate-950 font-semibold'
+                      : 'bg-[#141d2b] text-amber-200 hover:text-white border border-amber-500/35'
+                  }`}
+                  title="Ver y gestionar las partes modulares inventadas o guardadas para la IA"
+                >
+                  <Sparkles className="w-3 h-3 shrink-0" />
+                  <span>Partes IA ({savedPartModules.length})</span>
+                </button>
+              </div>
+
+              <div className="flex items-center gap-1 text-[11px] font-medium">
+                <button
+                  onClick={() => setActiveTab('catalog')}
+                  className={`flex-1 px-2 py-1 rounded flex items-center justify-center gap-1 transition-colors cursor-pointer whitespace-nowrap ${
                     activeTab === 'catalog'
                       ? 'bg-emerald-500 text-slate-950 font-semibold'
                       : 'bg-[#141d2b] text-slate-300 hover:text-white border border-slate-800'
@@ -1177,7 +1223,9 @@ export default function App() {
 
                 <select
                   value={
-                    ['foliage', 'library', 'catalog'].includes(activeTab) ? 'more' : activeTab
+                    ['foliage', 'library', 'ai_parts', 'catalog'].includes(activeTab)
+                      ? 'more'
+                      : activeTab
                   }
                   onChange={(e) => {
                     if (e.target.value !== 'more') {
@@ -1185,21 +1233,21 @@ export default function App() {
                     }
                   }}
                   title="Más paneles especializados"
-                  className={`w-24 bg-[#141d2b] border rounded px-1.5 py-1.5 text-[11px] cursor-pointer focus:outline-none ${
-                    !['foliage', 'library', 'catalog'].includes(activeTab)
+                  className={`flex-1 bg-[#141d2b] border rounded px-2 py-1 text-[11px] cursor-pointer focus:outline-none ${
+                    !['foliage', 'library', 'ai_parts', 'catalog'].includes(activeTab)
                       ? 'border-emerald-400 text-emerald-300 font-semibold'
                       : 'border-slate-700/80 text-slate-300'
                   }`}
                 >
                   <option value="more" disabled>
-                    Más...
+                    Más secciones...
                   </option>
-                  <option value="architecture">Tronco/Raíces</option>
-                  <option value="shaders">Shaders/Bases</option>
-                  <option value="aquatic">Corales/Algas</option>
-                  <option value="moss_fungi">Musgos/Hongos</option>
-                  <option value="xenobotany">Alien Xeno</option>
-                  <option value="representation">Vértices/LOD</option>
+                  <option value="architecture">Tronco / Raíces</option>
+                  <option value="shaders">Shaders / Bases</option>
+                  <option value="aquatic">Corales / Algas</option>
+                  <option value="moss_fungi">Musgos / Hongos</option>
+                  <option value="xenobotany">Alien Xenobotánica</option>
+                  <option value="representation">Vértices / LOD</option>
                 </select>
               </div>
 
@@ -1398,6 +1446,198 @@ export default function App() {
                       </div>
                     )}
                   </div>
+                </div>
+              )}
+
+              {/* TAB 0B: PARTES IA — TARJETAS DE PARTES MODULARES GUARDADAS / INVENTADAS POR IA */}
+              {activeTab === 'ai_parts' && (
+                <div className="flex flex-col gap-2.5">
+                  <div className="bg-[#131f2e] border border-amber-500/35 rounded-lg p-2.5 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-semibold text-amber-200 flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        Biblioteca de Partes IA ({savedPartModules.length})
+                      </span>
+                      <button
+                        onClick={() => setAiModalOpen(true)}
+                        className="px-2 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-200 text-[10px] font-semibold cursor-pointer"
+                      >
+                        + Diseñar con Foto
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-slate-400 leading-snug">
+                      Cada parte guardada o sintetizada por la IA se comparte con Ollama, LM Studio y Gemini para reutilizarla en futuras especies.
+                    </p>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        value={newPartNameInput}
+                        onChange={(e) => setNewPartNameInput(e.target.value)}
+                        placeholder="Nombre para guardar parte actual..."
+                        className="flex-1 min-w-0 bg-[#0b1119] border border-slate-700 rounded px-2 py-1 text-[11px] text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-amber-400"
+                      />
+                      <button
+                        onClick={() => {
+                          const currentElem: CustomBotanicalElement = params.customElement || {
+                            id: `elem_custom_${Date.now()}`,
+                            name: `Elemento Modular #${params.seed}`,
+                            scientificName: 'Botanica modularis sp.',
+                            description:
+                              'Combinación personalizada de tallo, superficie, copa y filamentos.',
+                            createdAt: Date.now(),
+                            stemStructure: 'multi_stalk_umbel_colony',
+                            canopyElement: 'custom_fungi_cap',
+                            surfaceElement: 'smooth_striated',
+                            hangingElement: 'weeping_filaments',
+                            lobeCount: 6,
+                            cupDepth: 0.45,
+                            spiralTurns: 1.35,
+                            spiralArms: 8,
+                            stemCount: 8,
+                            trunkBentS: 0.32,
+                            branchSpread: 0.65,
+                            branchDroop: 0.18,
+                            capDomeHeight: 0.56,
+                            capSpotDensity: 0.85,
+                            gillCount: 24,
+                            petalOpenness: 0.35,
+                            leafSerration: 0.4,
+                            thornDensity: 0.15,
+                            thornLength: 0.9,
+                            filamentCount: 24,
+                            filamentLength: 1.2,
+                            padLayers: 6,
+                          };
+                          const autoLabel = `${STEM_STRUCTURE_META[currentElem.stemStructure]?.label.split(' ')[0] || 'Parte'} + ${CANOPY_ELEMENT_META[currentElem.canopyElement]?.label.split(' ')[0] || 'Copa'} #${params.seed}`;
+                          const finalName = newPartNameInput.trim() || autoLabel;
+                          const toSave: CustomBotanicalElement = {
+                            ...currentElem,
+                            id: `elem_user_${Date.now()}`,
+                            name: finalName,
+                            createdAt: Date.now(),
+                          };
+                          const updated = saveCustomElementToApp(toSave);
+                          setCustomElements(updated);
+                          const updatedModules = saveCustomPartModule(finalName, 'canopy', toSave);
+                          setSavedPartModules(updatedModules);
+                          setNewPartNameInput('');
+                          updateParam('engine', 'composed_custom');
+                          updateParam('foliageType', 'ai_custom_element');
+                          updateParam('customElement', toSave);
+                          showTempNotice(`Parte "${finalName}" guardada en Partes IA`);
+                        }}
+                        className="px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500/35 border border-amber-400/50 text-amber-200 text-[10px] font-semibold cursor-pointer shrink-0"
+                      >
+                        + Guardar actual
+                      </button>
+                    </div>
+                  </div>
+
+                  {savedPartModules.length === 0 ? (
+                    <div className="bg-[#141d2b] border border-slate-800 rounded-lg p-6 text-center space-y-2">
+                      <p className="text-xs text-slate-300 font-medium">
+                        No hay partes guardadas todavía.
+                      </p>
+                      <p className="text-[11px] text-slate-400 leading-relaxed">
+                        Guarda cualquier combinación desde «Sliders / Partes» o diseña una planta desde una imagen con la IA para que aparezcan aquí.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {savedPartModules.map((part) => {
+                        const stemLabel =
+                          STEM_STRUCTURE_META[part.element.stemStructure]?.label ||
+                          part.element.stemStructure;
+                        const canopyLabel =
+                          CANOPY_ELEMENT_META[part.element.canopyElement]?.label ||
+                          part.element.canopyElement;
+                        const formattedDate = new Date(part.createdAt).toLocaleDateString('es-ES', {
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        });
+                        const isSpline =
+                          part.element.canopyElement === 'custom_spline_leaf_crown' ||
+                          part.element.synthesizedHeadTopology === 'spline_petal_corona';
+                        const isLathe =
+                          part.element.canopyElement === 'procedural_lathe_head' ||
+                          part.element.synthesizedHeadTopology === 'revolved_lathe_chalice';
+                        const isCurrent = params.customElement?.name === part.name;
+
+                        return (
+                          <div
+                            key={part.id}
+                            className={`rounded-lg border p-2.5 space-y-2 transition-colors ${
+                              isCurrent
+                                ? 'bg-emerald-950/35 border-emerald-400/70'
+                                : 'bg-[#141d2b] border-slate-800/90 hover:border-slate-700'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="font-semibold text-xs text-slate-100 truncate">
+                                  {part.name}
+                                </div>
+                                <div className="text-[10px] text-slate-400 mt-0.5">
+                                  Guardada: {formattedDate}
+                                </div>
+                              </div>
+                              {(isSpline || isLathe) && (
+                                <span className="px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300 text-[9px] font-semibold shrink-0">
+                                  {isSpline ? 'Curva Spline IA' : 'Revolución IA'}
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="bg-[#0d141d] border border-slate-800/80 rounded px-2 py-1.5 space-y-1 text-[10px]">
+                              <div className="flex items-baseline gap-1.5">
+                                <span className="text-slate-400 shrink-0">Tallo:</span>
+                                <span className="text-slate-200 truncate">{stemLabel}</span>
+                              </div>
+                              <div className="flex items-baseline gap-1.5">
+                                <span className="text-slate-400 shrink-0">Copa:</span>
+                                <span className="text-emerald-300 truncate">{canopyLabel}</span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 pt-0.5">
+                              <button
+                                onClick={() => {
+                                  updateParam('engine', 'composed_custom');
+                                  updateParam('foliageType', 'ai_custom_element');
+                                  updateParam('customElement', { ...part.element });
+                                  setActiveTab('foliage');
+                                  showTempNotice(`Parte "${part.name}" aplicada al visor 3D`);
+                                }}
+                                className="flex-1 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-500/40 text-emerald-200 text-[11px] font-semibold cursor-pointer"
+                              >
+                                Aplicar y Editar 3D
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const nextModules = deleteSavedPartModule(part.id);
+                                  setSavedPartModules(nextModules);
+                                  const nextCustom = deleteCustomElementFromApp(
+                                    part.element.id,
+                                    part.name
+                                  );
+                                  setCustomElements(nextCustom);
+                                  showTempNotice(`Parte "${part.name}" borrada`);
+                                }}
+                                className="px-2.5 py-1 rounded bg-rose-950/60 hover:bg-rose-900/80 border border-rose-500/40 text-rose-300 text-[11px] font-medium flex items-center gap-1 cursor-pointer shrink-0"
+                                title="Eliminar esta parte de la biblioteca IA"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                <span>Borrar</span>
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -2504,29 +2744,80 @@ export default function App() {
                       <span className="text-[10px] text-slate-400 group-open:rotate-180 transition-transform">▾</span>
                     </summary>
                     <div className="p-2.5 space-y-2.5">
-                      <div className="flex items-center justify-between gap-2">
+                      {/* Quick 7 Representation Styles 1-Click Pills */}
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-semibold text-emerald-300">
+                            7 Estilos de Representación 3D
+                          </span>
+                          <span className="text-[9px] text-slate-400">
+                            {REPRESENTATION_STYLE_META[params.representationStyle].short}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-4 gap-1">
+                          {(Object.keys(REPRESENTATION_STYLE_META) as RepresentationStyle[]).map(
+                            (st) => {
+                              const active = params.representationStyle === st;
+                              return (
+                                <button
+                                  key={st}
+                                  onClick={() => updateParam('representationStyle', st)}
+                                  title={REPRESENTATION_STYLE_META[st].description}
+                                  className={`px-1 py-1 rounded text-[9px] font-medium truncate border cursor-pointer transition-colors ${
+                                    active
+                                      ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-bold'
+                                      : 'bg-[#0d141d] text-slate-300 border-slate-700/80 hover:border-emerald-500/50'
+                                  }`}
+                                >
+                                  {REPRESENTATION_STYLE_META[st].short}
+                                </button>
+                              );
+                            }
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-1.5">
                         <select
                           value={params.customElement?.id || ''}
                           onChange={(e) => {
-                            const found = customElements.find((el) => el.id === e.target.value);
-                            if (found) {
+                            const val = e.target.value;
+                            const foundEl = customElements.find((el) => el.id === val);
+                            const foundPart = savedPartModules.find((pm) => pm.id === val);
+                            const target = foundEl || foundPart?.element;
+                            if (target) {
                               updateParam('engine', 'composed_custom');
                               updateParam('foliageType', 'ai_custom_element');
-                              updateParam('customElement', { ...found });
-                              showTempNotice(`Elemento aplicado: ${found.name}`);
+                              updateParam('customElement', { ...target });
+                              showTempNotice(`Parte aplicada: ${foundPart?.name || target.name}`);
                             }
                           }}
                           className="flex-1 min-w-0 bg-[#0d141d] border border-emerald-500/35 rounded px-2 py-1 text-[11px] text-emerald-200"
                         >
                           <option value="">
-                            Elementos guardados ({customElements.length})...
+                            Biblioteca guardada ({customElements.length + savedPartModules.length})...
                           </option>
+                          {savedPartModules.map((pm) => (
+                            <option key={pm.id} value={pm.id}>
+                              [Parte] {pm.name}
+                            </option>
+                          ))}
                           {customElements.map((el) => (
                             <option key={el.id} value={el.id}>
                               {el.name}
                             </option>
                           ))}
                         </select>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          value={newPartNameInput}
+                          onChange={(e) => setNewPartNameInput(e.target.value)}
+                          placeholder="Nombre opcional para guardar parte..."
+                          className="flex-1 min-w-0 bg-[#0d141d] border border-slate-700 rounded px-2 py-1 text-[10px] text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500"
+                        />
                         <button
                           onClick={() => {
                             const currentElem: CustomBotanicalElement = params.customElement || {
@@ -2558,18 +2849,23 @@ export default function App() {
                               filamentLength: 1.2,
                               padLayers: 6,
                             };
+                            const autoLabel = `${STEM_STRUCTURE_META[currentElem.stemStructure]?.label.split(' ')[0] || 'Parte'} + ${CANOPY_ELEMENT_META[currentElem.canopyElement]?.label.split(' ')[0] || 'Copa'} #${params.seed}`;
+                            const finalName = newPartNameInput.trim() || autoLabel;
                             const toSave: CustomBotanicalElement = {
                               ...currentElem,
                               id: `elem_user_${Date.now()}`,
-                              name: `${STEM_STRUCTURE_META[currentElem.stemStructure].label.split(' ')[0]} + ${CANOPY_ELEMENT_META[currentElem.canopyElement].label.split(' ')[0]} #${params.seed}`,
+                              name: finalName,
                               createdAt: Date.now(),
                             };
                             const updated = saveCustomElementToApp(toSave);
                             setCustomElements(updated);
+                            const updatedModules = saveCustomPartModule(finalName, 'canopy', toSave);
+                            setSavedPartModules(updatedModules);
+                            setNewPartNameInput('');
                             updateParam('engine', 'composed_custom');
                             updateParam('foliageType', 'ai_custom_element');
                             updateParam('customElement', toSave);
-                            showTempNotice(`Elemento "${toSave.name}" guardado`);
+                            showTempNotice(`Parte "${finalName}" guardada en biblioteca IA`);
                           }}
                           className="px-2 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-400/50 text-emerald-200 text-[10px] font-semibold cursor-pointer shrink-0"
                         >
@@ -2683,6 +2979,23 @@ export default function App() {
                             ).map((bf) => (
                               <option key={bf} value={bf}>
                                 {SYNTHESIZED_BASAL_META[bf].label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="col-span-2 flex flex-col gap-0.5">
+                          <span className="text-[10px] text-amber-300/90">
+                            Shader / Corteza del Tronco ({Object.keys(BARK_TYPE_META).length} Shaders):
+                          </span>
+                          <select
+                            value={params.barkType}
+                            onChange={(e) => updateParam('barkType', e.target.value as BarkType)}
+                            className="bg-[#0d141d] border border-amber-500/40 rounded px-1.5 py-1 text-[11px] text-amber-100"
+                          >
+                            {(Object.keys(BARK_TYPE_META) as BarkType[]).map((bt) => (
+                              <option key={bt} value={bt}>
+                                {BARK_TYPE_META[bt].label}
                               </option>
                             ))}
                           </select>

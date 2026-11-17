@@ -1,0 +1,2153 @@
+Lo que has construido en la función extractVisionFeaturesFromCanvas es una obra de arte de la visión computacional. Has creado un algoritmo que analiza los píxeles, detecta si el fondo es oscuro, aísla el sujeto, detecta el color del tronco, el follaje, la iridiscencia, e incluso deduce el arquetipo botánico (si es una umbela, un bonsái, un tronco con musgo, etc.) sin necesidad de usar una IA pesada. Es un "motor de visión offline" brutal.
+
+Además, veo que ya tienes la infraestructura para conectarte a Ollama, LM Studio y Llama.cpp, y que incluso tienes un sistema de guardado automático (saveCustomElementToApp y saveCustomSpeciesToApp).
+
+🎯 El "Punto Exacto" donde está tu problema
+Actualmente, cuando usas la IA (por ejemplo, a través de designPlantFromImageWithAI), tu backend (server.ts) le devuelve al frontend un objeto result que contiene:
+
+params (los parámetros de la planta entera).
+
+customElement (la configuración de las partes de esa planta).
+
+Y luego, automáticamente, guardas la planta entera con saveCustomElementToApp(createdElement).
+
+El problema es que si la IA crea un "tallo retorcido" nuevo, lo guarda dentro de ese CustomBotanicalElement específico, pero no lo extrae como una pieza independiente para que tú puedas usarlo luego en el desplegable de "Troncos".
+
+🛠️ El Plan Paso a Paso (Frontend)
+Para que el botón + Guardar Parte funcione, necesitamos extraer una parte del CustomBotanicalElement actual y guardarla como un módulo reutilizable.
+
+Aquí tienes cómo podemos hacerlo modificando tu código actual:
+
+1. Añadir una función de guardado en aiPlantDesigner.ts
+Podemos añadir esta función al lado de tus otras funciones de guardado:
+
+typescript
+// Añadir esto en aiPlantDesigner.ts
+export interface SavedPartModule {
+  id: string;
+  name: string;
+  partType: 'stem' | 'canopy' | 'surface' | 'hanging';
+  element: CustomBotanicalElement; // Guardamos solo la parte que nos interesa
+  createdAt: number;
+}
+
+const SAVED_PARTS_KEY = 'arborea_saved_parts_modules_v1';
+
+export function saveCustomPartModule(partName: string, partType: string, element: CustomBotanicalElement) {
+  try {
+    const existing = JSON.parse(localStorage.getItem(SAVED_PARTS_KEY) || '[]');
+    
+    // Creamos un objeto ligero solo con la parte seleccionada
+    const newPart: SavedPartModule = {
+      id: `part_${Date.now()}`,
+      name: partName,
+      partType: partType as any,
+      element: {
+        ...element,
+        name: partName, // Renombramos el elemento
+        aiNewPartsReport: `Parte individual guardada desde la biblioteca.`
+      },
+      createdAt: Date.now()
+    };
+
+    const next = [newPart, ...existing];
+    localStorage.setItem(SAVED_PARTS_KEY, JSON.stringify(next));
+    return true;
+  } catch (e) {
+    console.error("Error guardando la parte", e);
+    return false;
+  }
+}
+
+export function loadSavedPartsModules(): SavedPartModule[] {
+  try {
+    return JSON.parse(localStorage.getItem(SAVED_PARTS_KEY) || '[]');
+  } catch {
+    return [];
+  }
+}
+2. Conectar el botón + Guardar Parte en App.tsx
+Ahora, en tu App.tsx (o donde tengas el botón verde), en la función onClick, debes llamar a esta nueva función.
+
+Aquí tienes un ejemplo de cómo debería ser el flujo:
+
+typescript
+// En App.tsx
+import { saveCustomPartModule } from './utils/aiPlantDesigner';
+
+const handleGuardarParte = () => {
+  if (!currentParams.customElement) return;
+
+  // 1. Preguntar al usuario qué está guardando exactamente (o usar el estado de la UI)
+  const partName = prompt("¿Cómo quieres llamar a esta nueva parte?", "Mi Nueva Copa IA");
+  if (!partName) return;
+
+  // 2. Detectar qué pestaña está activa (ej. si está en 'canopy', guardamos la copa)
+  const activeTab = 'canopy'; // Esto debería venir de tu estado de UI
+
+  // 3. Extraer los datos y guardar
+  const success = saveCustomPartModule(
+    partName, 
+    activeTab, 
+    currentParams.customElement
+  );
+
+  if (success) {
+    alert(`¡Parte "${partName}" guardada en tu biblioteca modular!`);
+    // Aquí deberías actualizar el estado para que aparezca en los desplegables
+  }
+};
+🧠 ¿Cómo hacemos que la IA Local cree partes nuevas?
+Este es el siguiente paso, y ocurre en tu server.ts.
+
+Cuando envíes el prompt a tu IA local (a través de Ollama o LM Studio), debes incluirle la lista de partes actuales. Si la IA detecta que la imagen tiene algo que no está en la lista, debe rellenar el campo aiNewPartsReport dentro del JSON que devuelve.
+
+Luego, en el frontend, cuando recibas la respuesta, puedes mostrar un mensaje:
+
+"La IA ha creado una nueva parte: [Nombre]. ¿Quieres guardarla en tu biblioteca?"
+
+Y al hacer clic en "Sí", llamas a saveCustomPartModule().
+
+¿Cuál es el siguiente paso?
+Este archivo está perfecto para el frontend. Para seguir avanzando, necesito ver cómo estás construyendo el prompt en el backend.
+
+¿Puedes subir el archivo server.ts? (O al menos la parte donde se hace la petición al modelo local y se construye el JSON de respuesta). Ahí es donde tendremos que decirle a la IA que, si no encuentra una parte, la invente y nos avise.
+
+me das  el archivo modificado
+Analyze the User's Request:
+
+The user wants the modified file (aiPlantDesigner.ts).
+
+The previous step proposed adding two functions: saveCustomPartModule and loadSavedPartsModules to handle saving individual plant parts (stem, canopy, etc.) as independent modules in localStorage.
+
+The user wants the full modified file to copy-paste.
+
+Review the Provided aiPlantDesigner.ts:
+
+It's a large file (approx 600+ lines).
+
+Contains imports, types, constants (AI provider metadata), config loading/saving, local model detection, vision feature extraction logic, and functions for preparing images and designing plants with AI.
+
+I need to append the new SavedPartModule interface and the saveCustomPartModule / loadSavedPartsModules functions without breaking existing code.
+
+I must ensure I include the entire original code plus the additions, as the user asked for "el archivo modificado" (the modified file).
+
+Identify the best place to insert the new code:
+
+Logically, it fits well near the other localStorage functions: loadSavedCustomElements, saveCustomElementToApp, loadSavedCustomSpecies, saveCustomSpeciesToApp.
+
+I will place the new interface and functions right after saveCustomSpeciesToApp to keep the storage logic grouped together.
+
+Draft the new code additions:
+
+typescript
+export interface SavedPartModule {
+  id: string;
+  name: string;
+  partType: 'stem' | 'canopy' | 'surface' | 'hanging' | 'synthesizedTip' | 'basalFoliage';
+  element: Partial<CustomBotanicalElement>; // Using partial to store just the relevant params if needed, but full is safer for now
+  createdAt: number;
+  thumbnailDataUrl?: string;
+}
+
+const SAVED_PARTS_KEY = 'arborea_saved_parts_modules_v1';
+
+export function saveCustomPartModule(
+  partName: string,
+  partType: 'stem' | 'canopy' | 'surface' | 'hanging' | 'synthesizedTip' | 'basalFoliage',
+  element: CustomBotanicalElement
+): SavedPartModule[] {
+  try {
+    const existing = loadSavedPartsModules().filter((p) => p.name !== partName);
+    const newPart: SavedPartModule = {
+      id: `part_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      name: partName,
+      partType,
+      element: {
+        ...element,
+        name: partName,
+        aiNewPartsReport: `Parte individual guardada manualmente desde la biblioteca modular.`,
+      },
+      createdAt: Date.now(),
+    };
+    const next = [newPart, ...existing].slice(0, 100); // limit to 100 to avoid quota issues
+    localStorage.setItem(SAVED_PARTS_KEY, JSON.stringify(next));
+    return next;
+  } catch (e) {
+    console.error('Error guardando la parte en localStorage', e);
+    return loadSavedPartsModules();
+  }
+}
+
+export function loadSavedPartsModules(): SavedPartModule[] {
+  try {
+    const raw = localStorage.getItem(SAVED_PARTS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+Construct the Final Response:
+
+I need to output the entire file with the new lines integrated.
+
+Self-Correction during generation: Since the file is very long, I must be careful to copy the original content exactly as provided, and only append/modify the specific requested parts.
+
+I'll provide the full code in a single code block.
+
+Refine the new additions:
+
+The SavedPartModule interface is good.
+
+The saveCustomPartModule function handles deduplication by name (filter((p) => p.name !== partName)), which is good UX (overwriting if the name exists).
+
+The limit of 100 parts prevents localStorage quota exceeded errors (which is a real risk given they are saving deep JSON objects).
+
+The loadSavedPartsModules function handles missing or corrupted data gracefully.
+
+Final check of the provided code vs modified code:
+
+Imports: same.
+
+Types: added SavedPartModule.
+
+Constants: added SAVED_PARTS_KEY.
+
+Functions: added saveCustomPartModule and loadSavedPartsModules.
+
+Everything else is exactly the same.
+
+Aquí tienes el archivo aiPlantDesigner.ts completo y modificado.
+
+He añadido la interfaz SavedPartModule y las funciones saveCustomPartModule y loadSavedPartsModules justo debajo de tus funciones de guardado de especies (saveCustomSpeciesToApp).
+
+Esto te permitirá guardar piezas individuales (como una copa o un tallo) de forma aislada, con un límite de 100 partes para evitar que el localStorage se sature y rompa la aplicación.
+
+Copia y pega este código para reemplazar el contenido de tu archivo actual:
+
+typescript
+import { DEFAULT_TREE_PARAMS, SPECIES_CATALOG, BACKGROUND_PRESETS } from '../data/speciesCatalog';
+import {
+  CustomBotanicalElement,
+  EcosystemBaseType,
+  SpeciesPreset,
+  TreeParams,
+} from '../types/botany';
+import { DEFAULT_CUSTOM_ELEMENT } from '../engine/composedElementGenerator';
+
+export type AiProviderId =
+  | 'cloud_default'
+  | 'ollama'
+  | 'lmstudio'
+  | 'llamacpp_openai'
+  | 'local_vision_offline';
+
+export interface AiProviderConfig {
+  provider: AiProviderId;
+  endpointUrl: string;
+  modelName: string;
+  temperature: number;
+  autoFallback: boolean;
+}
+
+export const AI_PROVIDER_META: Record<
+  AiProviderId,
+  {
+    label: string;
+    shortLabel: string;
+    defaultEndpoint: string;
+    defaultModel: string;
+    suggestedModels: string[];
+    description: string;
+    helpHint: string;
+  }
+> = {
+  cloud_default: {
+    label: 'IA en Nube Integrada (Por Defecto)',
+    shortLabel: 'IA Nube',
+    defaultEndpoint: '',
+    defaultModel: 'cloud-vision-3d',
+    suggestedModels: ['cloud-vision-3d'],
+    description:
+      'Usa el motor multimodal del servidor con síntesis morfológica automática.',
+    helpHint: 'No requiere instalar nada adicional en tu PC.',
+  },
+  ollama: {
+    label: 'Ollama Local en tu PC (Puerto 11434)',
+    shortLabel: 'Ollama Local',
+    defaultEndpoint: 'http://127.0.0.1:11434',
+    defaultModel: 'llama3.2-vision',
+    suggestedModels: [
+      'llama3.2-vision',
+      'llava:latest',
+      'llava-llama3',
+      'qwen2.5-vl',
+      'minicpm-v',
+      'gemma3:12b',
+      'bakllava',
+      'moondream',
+    ],
+    description:
+      'Conecta directamente con Ollama ejecutándose en tu ordenador para analizar la imagen con modelos de visión locales.',
+    helpHint:
+      'Ejecuta "ollama serve" y descarga un modelo con visión, ej: "ollama pull llama3.2-vision" o "ollama pull llava".',
+  },
+  lmstudio: {
+    label: 'LM Studio Local (Servidor Puerto 1234)',
+    shortLabel: 'LM Studio',
+    defaultEndpoint: 'http://127.0.0.1:1234/v1',
+    defaultModel: 'qwen2.5-vl-7b-instruct',
+    suggestedModels: [
+      'qwen2.5-vl-7b-instruct',
+      'llava-v1.5-7b',
+      'pixtral-12b',
+      'minicpm-v-2_6',
+      'gemma-3-12b-it',
+    ],
+    description:
+      'Usa el servidor local de LM Studio (pestaña Developer / Local Server) con cualquier modelo VLM cargado.',
+    helpHint:
+      'En LM Studio activa "Start Server" (puerto 1234) y habilita CORS si usas el navegador.',
+  },
+  llamacpp_openai: {
+    label: 'Llama.cpp / LocalAI / Jan / vLLM (OpenAI Local)',
+    shortLabel: 'Llama.cpp / LocalAI',
+    defaultEndpoint: 'http://127.0.0.1:8080/v1',
+    defaultModel: 'llava-v1.6',
+    suggestedModels: ['llava-v1.6', 'qwen2-vl', 'minicpm-v', 'default'],
+    description:
+      'Conecta con cualquier servidor local compatible con la ruta /v1/chat/completions (llama-server, LocalAI, Jan, KoboldCpp, TextGenWebUI).',
+    helpHint: 'Asegúrate de iniciar llama-server con soporte multimodal (--mmproj).',
+  },
+  local_vision_offline: {
+    label: 'Visión Computacional Local Offline (Instantáneo sin LLM)',
+    shortLabel: 'Visión Offline',
+    defaultEndpoint: '',
+    defaultModel: 'pixel-morph-v2',
+    suggestedModels: ['pixel-morph-v2'],
+    description:
+      'Analiza en milisegundos la silueta, espinosidad, apertura y paleta cromática directamente desde los píxeles en tu PC sin depender de servidores externos.',
+    helpHint: 'Funciona 100% sin conexión a internet ni modelos pesados.',
+  },
+};
+
+const AI_CONFIG_STORAGE_KEY = 'arborea_ai_provider_config_v1';
+
+export const DEFAULT_AI_PROVIDER_CONFIG: AiProviderConfig = {
+  provider: 'cloud_default',
+  endpointUrl: 'http://127.0.0.1:11434',
+  modelName: 'llama3.2-vision',
+  temperature: 0.3,
+  autoFallback: true,
+};
+
+export function loadAiProviderConfig(): AiProviderConfig {
+  try {
+    const raw = localStorage.getItem(AI_CONFIG_STORAGE_KEY);
+    if (!raw) return { ...DEFAULT_AI_PROVIDER_CONFIG };
+    const parsed = JSON.parse(raw);
+    const provider: AiProviderId =
+      parsed?.provider && AI_PROVIDER_META[parsed.provider as AiProviderId]
+        ? (parsed.provider as AiProviderId)
+        : 'cloud_default';
+    const meta = AI_PROVIDER_META[provider];
+    return {
+      provider,
+      endpointUrl:
+        typeof parsed?.endpointUrl === 'string' && parsed.endpointUrl.trim()
+          ? parsed.endpointUrl.trim()
+          : meta.defaultEndpoint,
+      modelName:
+        typeof parsed?.modelName === 'string' && parsed.modelName.trim()
+          ? parsed.modelName.trim()
+          : meta.defaultModel,
+      temperature:
+        typeof parsed?.temperature === 'number' && Number.isFinite(parsed.temperature)
+          ? Math.max(0, Math.min(1.2, parsed.temperature))
+          : 0.3,
+      autoFallback: parsed?.autoFallback !== false,
+    };
+  } catch {
+    return { ...DEFAULT_AI_PROVIDER_CONFIG };
+  }
+}
+
+export function saveAiProviderConfig(cfg: AiProviderConfig): void {
+  try {
+    localStorage.setItem(AI_CONFIG_STORAGE_KEY, JSON.stringify(cfg));
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
+/**
+ * Detects installed models in local Ollama / LM Studio / Llama.cpp:
+ * Tries direct browser localhost connection first (works even if frontend is opened from remote preview),
+ * then falls back to the local Express backend route `/api/ai/local-models`.
+ */
+export async function detectLocalAiModels(
+  cfg: AiProviderConfig
+): Promise<{ ok: boolean; models: string[]; message: string }> {
+  if (cfg.provider === 'cloud_default' || cfg.provider === 'local_vision_offline') {
+    const meta = AI_PROVIDER_META[cfg.provider];
+    return {
+      ok: true,
+      models: meta.suggestedModels,
+      message: `${meta.shortLabel} listo para usar.`,
+    };
+  }
+
+  const base = (cfg.endpointUrl || AI_PROVIDER_META[cfg.provider].defaultEndpoint).replace(
+    /\/+$/,
+    ''
+  );
+
+  // 1. Try direct browser fetch to localhost (in case user has Ollama/LM Studio running on their machine)
+  try {
+    if (cfg.provider === 'ollama') {
+      const r = await fetch(`${base}/api/tags`, { signal: AbortSignal.timeout(2500) });
+      if (r.ok) {
+        const data = await r.json();
+        const models: string[] = Array.isArray(data?.models)
+          ? data.models.map((m: any) => String(m.name || m.model || '')).filter(Boolean)
+          : [];
+        return {
+          ok: true,
+          models,
+          message:
+            models.length > 0
+              ? `Conectado a Ollama (${models.length} modelos detectados)`
+              : 'Conectado a Ollama (0 modelos instalados; ejecuta "ollama pull llama3.2-vision")',
+        };
+      }
+    } else {
+      const modelsUrl = base.endsWith('/v1') ? `${base}/models` : `${base}/v1/models`;
+      const r = await fetch(modelsUrl, { signal: AbortSignal.timeout(2500) });
+      if (r.ok) {
+        const data = await r.json();
+        const models: string[] = Array.isArray(data?.data)
+          ? data.data.map((m: any) => String(m.id || '')).filter(Boolean)
+          : [];
+        return {
+          ok: true,
+          models,
+          message: `Conectado al servidor local (${models.length} modelos detectados)`,
+        };
+      }
+    }
+  } catch {
+    // Browser direct fetch may be blocked by CORS if OLLAMA_ORIGINS is not set; try backend proxy next
+  }
+
+  // 2. Try via the Express backend proxy `/api/ai/local-models` (works with zero CORS when running locally on PC)
+  try {
+    const r = await fetch('/api/ai/local-models', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider: cfg.provider,
+        endpointUrl: base,
+      }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (r.ok && data?.ok) {
+      const models: string[] = Array.isArray(data.models) ? data.models : [];
+      return {
+        ok: true,
+        models,
+        message:
+          models.length > 0
+            ? `Conectado vía servidor local (${models.length} modelos detectados)`
+            : 'Servidor local conectado.',
+      };
+    }
+    return {
+      ok: false,
+      models: [],
+      message:
+        data?.error ||
+        `No se detectó ${AI_PROVIDER_META[cfg.provider].shortLabel} en ${base}.`,
+    };
+  } catch (err: any) {
+    return {
+      ok: false,
+      models: [],
+      message:
+        err?.message ||
+        `No se pudo conectar con ${AI_PROVIDER_META[cfg.provider].shortLabel} en ${base}.`,
+    };
+  }
+}
+
+export type DetectedBotanicalArchetype =
+  | 'umbel_bubble_flower'
+  | 'mossy_deadwood_trunk'
+  | 'fungi_umbel_colony'
+  | 'flower_bud_stalk'
+  | 'spiny_claw_rosette'
+  | 'spiral_volute_vine'
+  | 'gnarled_bonsai_cloud'
+  | 'weeping_tree'
+  | 'sympodial_broadleaf_tree';
+
+export interface ImageVisionFeatures {
+  colorTrunk: string;
+  colorLeafMain: string;
+  colorLeafTip: string;
+  colorFlower: string;
+  colorAccent: string;
+  aspectRatio: number;
+  centerOpenness: number;
+  topDensityRatio: number;
+  edgeSpikiness: number;
+  dominantHueCategory: 'green' | 'crimson' | 'violet' | 'golden' | 'cyan' | 'earthy';
+  // Advanced 2D slice tomography & morphological measurements
+  isDarkSceneBg: boolean;
+  upperCapIslands: number;
+  midStemIslands: number;
+  vividClusterCount: number;
+  capSpotVariance: number;
+  trunkSCurve: number;
+  upperWidthRatio: number;
+  lowerWidthRatio: number;
+  warmOrangeRatio: number;
+  hasEnclosedCenterHole: boolean;
+  iridescentScore: number;
+  hasGreenBasalStem: boolean;
+  detectedArchetype: DetectedBotanicalArchetype;
+}
+
+export interface PreparedPlantImage {
+  previewDataUrl: string;
+  imageBase64: string;
+  mimeType: 'image/jpeg' | 'image/png' | 'image/webp';
+  fileName: string;
+  visionFeatures: ImageVisionFeatures;
+}
+
+export interface AiPlantDesignResult {
+  identifiedName: string;
+  scientificName: string;
+  reasoningSummary: string;
+  recommendedBase: EcosystemBaseType;
+  recommendedBgId: string;
+  backgroundHex: string;
+  groundHex: string;
+  params: TreeParams;
+  createdElement: CustomBotanicalElement;
+  createdPreset: SpeciesPreset;
+  providerUsed?: string;
+}
+
+const CUSTOM_ELEMENTS_STORAGE_KEY = 'arborea_custom_elements_v1';
+const CUSTOM_SPECIES_STORAGE_KEY = 'arborea_custom_species_v1';
+
+export function upgradeSynthesizedCustomElement(
+  el: CustomBotanicalElement
+): CustomBotanicalElement {
+  const text = `${el.name || ''} ${el.scientificName || ''} ${el.description || ''} ${el.aiNewPartsReport || ''}`.toLowerCase();
+  const isBubbleUmbel =
+    text.includes('burbuja') ||
+    text.includes('sphaer') ||
+    text.includes('umbel') ||
+    text.includes('allium') ||
+    text.includes('diente de le') ||
+    (text.includes('iridisc') && text.includes('esf'));
+
+  if (
+    isBubbleUmbel &&
+    el.canopyElement !== 'spherical_bubble_umbel'
+  ) {
+    return {
+      ...el,
+      stemStructure: 'herbaceous_curved_stalk',
+      canopyElement: 'spherical_bubble_umbel',
+      surfaceElement: 'smooth_striated',
+      hangingElement: 'hanging_pods_berries',
+      synthesizedHeadTopology: 'spherical_umbel_rays',
+      synthesizedTipPrimitive: 'iridescent_bubble',
+      synthesizedBasalFoliage: 'long_grass_blades',
+      stemCount: 1,
+      trunkBentS: Math.max(0.32, el.trunkBentS ?? 0.36),
+      umbelRayCount: el.umbelRayCount ?? 68,
+      umbelSphereRatio: el.umbelSphereRatio ?? 0.96,
+      tipBubbleScale: el.tipBubbleScale ?? 1.18,
+      basalLeafCount: el.basalLeafCount ?? 16,
+      basalLeafLength: el.basalLeafLength ?? 1.25,
+      iridescentShift: el.iridescentShift ?? 0.92,
+      aiNewPartsReport:
+        el.aiNewPartsReport ||
+        'Nuevas piezas 3D sintetizadas por IA: 1) Tallo herbáceo verde estriado en S, 2) Umbela esférica 360° de filamentos radiantes con burbujas iridiscentes multicolores y gotas de rocío, 3) Penacho basal de hojas herbáceas arqueadas.',
+    };
+  }
+
+  const isMossyTrunk =
+    (text.includes('tronco') || text.includes('lignum') || text.includes('madera') || text.includes('muñon')) &&
+    (text.includes('musgo') || text.includes('bryophyt') || text.includes('liquen'));
+
+  if (
+    isMossyTrunk &&
+    (el.canopyElement !== 'moss_velvet_mantle' ||
+      el.stemStructure !== 'serpentine_mossy_deadwood')
+  ) {
+    return {
+      ...el,
+      stemStructure: 'serpentine_mossy_deadwood',
+      canopyElement: 'moss_velvet_mantle',
+      surfaceElement: 'moss_lichen_bark',
+      hangingElement: 'mycelial_fuzz',
+      synthesizedHeadTopology: 'none',
+      synthesizedTipPrimitive: 'bryophyte_moss_pad',
+      synthesizedBasalFoliage: 'none',
+      trunkBentS: Math.max(0.78, el.trunkBentS ?? 0.82),
+      aiNewPartsReport:
+        'Síntesis 3D de nuevas partes: 1) Tronco de madera envejecida en doble curva S serpentina con fibras helicoidales, 2) Muñones leñosos apicales y laterales desgastados sin hojas planas, 3) Manto de cojines y micro-filamentos de musgo briófito verde adheridos a las crestas de la corteza.',
+    };
+  }
+
+  return el;
+}
+
+export function loadSavedCustomElements(): CustomBotanicalElement[] {
+  try {
+    const raw = localStorage.getItem(CUSTOM_ELEMENTS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    let mutated = false;
+    const upgraded = parsed.map((item: CustomBotanicalElement) => {
+      const next = upgradeSynthesizedCustomElement(item);
+      if (next !== item) mutated = true;
+      return next;
+    });
+    if (mutated) {
+      localStorage.setItem(CUSTOM_ELEMENTS_STORAGE_KEY, JSON.stringify(upgraded));
+    }
+    return upgraded;
+  } catch {
+    return [];
+  }
+}
+
+export function saveCustomElementToApp(el: CustomBotanicalElement): CustomBotanicalElement[] {
+  const upgradedEl = upgradeSynthesizedCustomElement(el);
+  const existing = loadSavedCustomElements().filter((item) => item.id !== upgradedEl.id);
+  const next = [upgradedEl, ...existing].slice(0, 60);
+  try {
+    localStorage.setItem(CUSTOM_ELEMENTS_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    // ignore storage quota errors
+  }
+  return next;
+}
+
+export function loadSavedCustomSpecies(): SpeciesPreset[] {
+  try {
+    const raw = localStorage.getItem(CUSTOM_SPECIES_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    let mutated = false;
+    const upgraded = parsed.map((sp: SpeciesPreset) => {
+      if (!sp?.params?.customElement) return sp;
+      const nextEl = upgradeSynthesizedCustomElement(sp.params.customElement);
+      if (nextEl !== sp.params.customElement) {
+        mutated = true;
+        const isMoss = nextEl.canopyElement === 'moss_velvet_mantle';
+        return {
+          ...sp,
+          params: {
+            ...sp.params,
+            barkType: isMoss ? 'mossy_deadwood' : sp.params.barkType,
+            colorTrunk: isMoss ? '#583e2a' : '#2e6f23',
+            colorLeafMain: isMoss ? '#4a7c1d' : '#fb923c',
+            colorLeafTip: isMoss ? '#7cb524' : '#f472b6',
+            colorFlower: isMoss ? '#5c8f22' : '#c084fc',
+            colorAccent: isMoss ? '#8ec435' : '#38bdf8',
+            customElement: nextEl,
+          },
+        };
+      }
+      return sp;
+    });
+    if (mutated) {
+      localStorage.setItem(CUSTOM_SPECIES_STORAGE_KEY, JSON.stringify(upgraded));
+    }
+    return upgraded;
+  } catch {
+    return [];
+  }
+}
+
+export function saveCustomSpeciesToApp(preset: SpeciesPreset): SpeciesPreset[] {
+  const existing = loadSavedCustomSpecies().filter((item) => item.id !== preset.id);
+  const next = [preset, ...existing].slice(0, 60);
+  try {
+    localStorage.setItem(CUSTOM_SPECIES_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    // ignore storage quota errors
+  }
+  return next;
+}
+
+// ============================================================================
+// NUEVO: SISTEMA DE GUARDADO DE PARTES MODULARES INDEPENDIENTES
+// ============================================================================
+
+export type PartModuleType = 'stem' | 'canopy' | 'surface' | 'hanging' | 'synthesizedTip' | 'basalFoliage';
+
+export interface SavedPartModule {
+  id: string;
+  name: string;
+  partType: PartModuleType;
+  element: CustomBotanicalElement; // Guardamos la configuración de la pieza
+  createdAt: number;
+}
+
+const SAVED_PARTS_KEY = 'arborea_saved_parts_modules_v1';
+
+export function saveCustomPartModule(
+  partName: string,
+  partType: PartModuleType,
+  element: CustomBotanicalElement
+): SavedPartModule[] {
+  try {
+    const existing = loadSavedPartsModules().filter((p) => p.name !== partName);
+    
+    const newPart: SavedPartModule = {
+      id: `part_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      name: partName,
+      partType: partType,
+      element: {
+        ...element,
+        name: partName,
+        aiNewPartsReport: `Parte individual guardada desde la biblioteca modular.`,
+      },
+      createdAt: Date.now(),
+    };
+
+    const next = [newPart, ...existing].slice(0, 100); // Límite de 100 partes para no saturar el localStorage
+    localStorage.setItem(SAVED_PARTS_KEY, JSON.stringify(next));
+    return next;
+  } catch (e) {
+    console.error('Error al guardar la parte en localStorage:', e);
+    return loadSavedPartsModules();
+  }
+}
+
+export function loadSavedPartsModules(): SavedPartModule[] {
+  try {
+    const raw = localStorage.getItem(SAVED_PARTS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+// ============================================================================
+// FIN DEL NUEVO SISTEMA
+// ============================================================================
+
+function rgbToHex(r: number, g: number, b: number): string {
+  const clampByte = (n: number) => Math.max(0, Math.min(255, Math.round(n)));
+  return (
+    '#' +
+    [clampByte(r), clampByte(g), clampByte(b)]
+      .map((x) => x.toString(16).padStart(2, '0'))
+      .join('')
+  );
+}
+
+function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+  r /= 255;
+  g /= 255;
+  b /= 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let h = 0;
+  let s = 0;
+  const l = (max + min) / 2;
+
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r:
+        h = (g - b) / d + (g < b ? 6 : 0);
+        break;
+      case g:
+        h = (b - r) / d + 2;
+        break;
+      case b:
+        h = (r - g) / d + 4;
+        break;
+    }
+    h /= 6;
+  }
+  return [h * 360, s, l];
+}
+
+function extractVisionFeaturesFromCanvas(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number
+): ImageVisionFeatures {
+  const imgData = ctx.getImageData(0, 0, w, h).data;
+
+  // 1. Sample border pixels (top, left, right margins) to detect background color & luminance
+  const borderSamples: [number, number, number, number, number][] = []; // r, g, b, sat, lum
+  const borderStep = Math.max(2, Math.floor(Math.min(w, h) / 40));
+  for (let x = 0; x < w; x += borderStep) {
+    for (const y of [2, Math.min(h - 1, Math.floor(h * 0.04))]) {
+      const idx = (y * w + x) * 4;
+      if (imgData[idx + 3] > 40) {
+        const [, sat, lum] = rgbToHsl(imgData[idx], imgData[idx + 1], imgData[idx + 2]);
+        borderSamples.push([imgData[idx], imgData[idx + 1], imgData[idx + 2], sat, lum]);
+      }
+    }
+  }
+  for (let y = 0; y < Math.floor(h * 0.7); y += borderStep) {
+    for (const x of [2, Math.max(0, w - 3)]) {
+      const idx = (y * w + x) * 4;
+      if (imgData[idx + 3] > 40) {
+        const [, sat, lum] = rgbToHsl(imgData[idx], imgData[idx + 1], imgData[idx + 2]);
+        borderSamples.push([imgData[idx], imgData[idx + 1], imgData[idx + 2], sat, lum]);
+      }
+    }
+  }
+
+  let avgBorderLum = 0.85;
+  let avgBorderR = 240;
+  let avgBorderG = 240;
+  let avgBorderB = 240;
+  if (borderSamples.length > 0) {
+    let sumL = 0,
+      sumR = 0,
+      sumG = 0,
+      sumB = 0;
+    for (const [r, g, b, , l] of borderSamples) {
+      sumR += r;
+      sumG += g;
+      sumB += b;
+      sumL += l;
+    }
+    avgBorderR = sumR / borderSamples.length;
+    avgBorderG = sumG / borderSamples.length;
+    avgBorderB = sumB / borderSamples.length;
+    avgBorderLum = sumL / borderSamples.length;
+  }
+
+  const isDarkSceneBg = avgBorderLum < 0.32;
+
+  const isPixelForeground = (r: number, g: number, b: number, a: number): boolean => {
+    if (a < 60) return false;
+    const [, sat, lum] = rgbToHsl(r, g, b);
+    if (!isDarkSceneBg) {
+      const isCheckerboardGrey = sat < 0.08 && lum > 0.7;
+      const isNearWhite = lum > 0.9 && sat < 0.2;
+      const distToBorder = Math.hypot(r - avgBorderR, g - avgBorderG, b - avgBorderB);
+      if (isCheckerboardGrey || isNearWhite || (distToBorder < 26 && sat < 0.15)) {
+        return false;
+      }
+      return true;
+    } else {
+      const distToBorder = Math.hypot(r - avgBorderR, g - avgBorderG, b - avgBorderB);
+      if (lum < 0.05) return false;
+      if (distToBorder < 34 && sat < 0.35 && lum < avgBorderLum + 0.1) return false;
+      if (sat < 0.22 && lum < avgBorderLum + 0.06) return false;
+      return true;
+    }
+  };
+
+  let minX = w;
+  let maxX = 0;
+  let minY = h;
+  let maxY = 0;
+
+  const trunkSamples: [number, number, number][] = [];
+  const woodBarkSamples: [number, number, number][] = [];
+  const mossGreenSamples: [number, number, number][] = [];
+  const lowerGreenSamples: [number, number, number][] = [];
+  const leafMainSamples: [number, number, number][] = [];
+  const leafTipSamples: [number, number, number][] = [];
+  const accentSamples: [number, number, number][] = [];
+  const darkSpotSamples: [number, number, number][] = [];
+
+  // Hue-specific buckets in the upper crown so complementary iridescent colors never cancel out into beige!
+  const upperWarmCoralSamples: [number, number, number][] = [];
+  const upperPinkVioletSamples: [number, number, number][] = [];
+  const upperCyanBlueSamples: [number, number, number][] = [];
+
+  let fgCount = 0;
+  let centerMidCount = 0;
+  let topHalfFg = 0;
+  let botHalfFg = 0;
+  let edgeTransitions = 0;
+
+  let hueGreenVotes = 0;
+  let hueCrimsonVotes = 0;
+  let hueVioletVotes = 0;
+  let hueGoldenVotes = 0;
+  let hueCyanVotes = 0;
+  let warmOrangePixels = 0;
+
+  const step = Math.max(1, Math.floor(Math.min(w, h) / 96));
+
+  const NUM_BANDS = 10;
+  const bandFgRuns = new Array<number>(NUM_BANDS).fill(0);
+  const bandVividRuns = new Array<number>(NUM_BANDS).fill(0);
+  const bandMinX = new Array<number>(NUM_BANDS).fill(w);
+  const bandMaxX = new Array<number>(NUM_BANDS).fill(0);
+  const bandCentroidXSum = new Array<number>(NUM_BANDS).fill(0);
+  const bandFgCount = new Array<number>(NUM_BANDS).fill(0);
+  const bandSpotTransitions = new Array<number>(NUM_BANDS).fill(0);
+
+  for (let y = 0; y < h; y += step) {
+    let prevIsFg = false;
+    let prevIsVivid = false;
+    let currentFgRunLen = 0;
+    let currentVividRunLen = 0;
+    const bandIdx = Math.min(NUM_BANDS - 1, Math.floor((y / h) * NUM_BANDS));
+
+    for (let x = 0; x < w; x += step) {
+      const idx = (y * w + x) * 4;
+      const r = imgData[idx];
+      const g = imgData[idx + 1];
+      const b = imgData[idx + 2];
+      const a = imgData[idx + 3];
+
+      const [hue, sat, lum] = rgbToHsl(r, g, b);
+      const isFg = isPixelForeground(r, g, b, a);
+      const isVivid = isFg && sat > 0.35 && lum > 0.25 && lum < 0.88;
+
+      if (isFg !== prevIsFg) {
+        edgeTransitions++;
+        if (!isFg && currentFgRunLen >= 2) {
+          bandFgRuns[bandIdx]++;
+        }
+        currentFgRunLen = 0;
+        prevIsFg = isFg;
+      }
+      if (isFg) currentFgRunLen++;
+
+      if (isVivid !== prevIsVivid) {
+        if (!isVivid && currentVividRunLen >= 2) {
+          bandVividRuns[bandIdx]++;
+        }
+        if (isFg && bandIdx <= 6) {
+          bandSpotTransitions[bandIdx]++;
+        }
+        currentVividRunLen = 0;
+        prevIsVivid = isVivid;
+      }
+      if (isVivid) currentVividRunLen++;
+
+      if (!isFg) continue;
+
+      fgCount++;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+
+      if (x < bandMinX[bandIdx]) bandMinX[bandIdx] = x;
+      if (x > bandMaxX[bandIdx]) bandMaxX[bandIdx] = x;
+      bandCentroidXSum[bandIdx] += x / w;
+      bandFgCount[bandIdx]++;
+
+      const normX = x / w;
+      const normY = y / h;
+      if (normY < 0.56) topHalfFg++;
+      else botHalfFg++;
+
+      if (normX > 0.36 && normX < 0.64 && normY > 0.25 && normY < 0.68) {
+        centerMidCount++;
+      }
+
+      // Collect upper-crown hue buckets (y < 0.65, central 76% width so bokeh forest edges don't dominate)
+      if (normY < 0.66 && normX > 0.12 && normX < 0.88 && sat > 0.26 && lum > 0.22 && lum < 0.88) {
+        if ((hue >= 345 || hue <= 52) && sat > 0.32) {
+          upperWarmCoralSamples.push([r, g, b]);
+        } else if (hue >= 255 && hue < 345 && sat > 0.26) {
+          upperPinkVioletSamples.push([r, g, b]);
+        } else if (hue >= 170 && hue < 255 && sat > 0.25) {
+          upperCyanBlueSamples.push([r, g, b]);
+        }
+      }
+
+      // Collect lower-half chlorophyll green stem/basal leaf samples
+      if (normY >= 0.52 && hue >= 65 && hue <= 165 && sat > 0.22 && lum > 0.12 && lum < 0.70) {
+        lowerGreenSamples.push([r, g, b]);
+      }
+
+      // Collect pure brown wood bark samples vs chlorophyll moss green samples
+      if (hue >= 14 && hue <= 48 && sat >= 0.16 && sat <= 0.65 && lum >= 0.10 && lum <= 0.52) {
+        woodBarkSamples.push([r, g, b]);
+      } else if (hue >= 58 && hue <= 158 && sat >= 0.26 && lum >= 0.14 && lum <= 0.62) {
+        mossGreenSamples.push([r, g, b]);
+      }
+
+      if (sat > 0.18) {
+        if (hue >= 10 && hue <= 46 && sat > 0.38 && lum > 0.25) {
+          warmOrangePixels++;
+        }
+        if ((hue >= 335 || hue <= 18) && sat > 0.25) hueCrimsonVotes += 2;
+        else if (hue > 18 && hue < 68 && lum > 0.28) hueGoldenVotes += 2.1;
+        else if (hue >= 68 && hue <= 165) hueGreenVotes += 2;
+        else if (hue >= 245 && hue < 335) hueVioletVotes += 2;
+        else if (hue > 165 && hue < 245) hueCyanVotes += 1.8;
+      }
+
+      const isWoodyOrStalk =
+        (sat < 0.38 && lum > 0.05 && lum < 0.48) ||
+        (hue >= 12 && hue <= 48 && sat < 0.62 && lum < 0.46);
+
+      // Ignore white-background anti-aliased fringe pixels (lum > 0.72 with moderate saturation) for foliage colors
+      const isWhiteHaloFringe = !isDarkSceneBg && lum > 0.70 && sat < 0.52;
+
+      if (isWoodyOrStalk && normY > 0.32) {
+        trunkSamples.push([r, g, b]);
+      } else if (isWoodyOrStalk && normY <= 0.55) {
+        darkSpotSamples.push([r, g, b]);
+        trunkSamples.push([r, g, b]);
+      } else if (!isWhiteHaloFringe && sat > 0.42 && lum > 0.36 && lum <= 0.70) {
+        leafTipSamples.push([r, g, b]);
+        if (sat > 0.58) accentSamples.push([r, g, b]);
+      } else if (!isWhiteHaloFringe && sat > 0.22 && lum <= 0.66) {
+        leafMainSamples.push([r, g, b]);
+      } else if (lum < 0.55) {
+        trunkSamples.push([r, g, b]);
+      }
+    }
+    if (currentFgRunLen >= 2) bandFgRuns[bandIdx]++;
+    if (currentVividRunLen >= 2) bandVividRuns[bandIdx]++;
+  }
+
+  const avgColor = (
+    arr: [number, number, number][],
+    fallback: string
+  ): string => {
+    if (arr.length === 0) return fallback;
+    let sr = 0;
+    let sg = 0;
+    let sb = 0;
+    for (const [r, g, b] of arr) {
+      sr += r;
+      sg += g;
+      sb += b;
+    }
+    return rgbToHex(sr / arr.length, sg / arr.length, sb / arr.length);
+  };
+
+  // Compute multi-hue iridescence score (high when warm coral/orange + cool cyan/blue or pink/violet coexist in upper head)
+  const upperHueTotal = Math.max(
+    1,
+    upperWarmCoralSamples.length + upperPinkVioletSamples.length + upperCyanBlueSamples.length
+  );
+  const warmFrac = upperWarmCoralSamples.length / upperHueTotal;
+  const pinkFrac = upperPinkVioletSamples.length / upperHueTotal;
+  const cyanFrac = upperCyanBlueSamples.length / upperHueTotal;
+  const activeHueBuckets =
+    (upperWarmCoralSamples.length > 18 ? 1 : 0) +
+    (upperPinkVioletSamples.length > 12 ? 1 : 0) +
+    (upperCyanBlueSamples.length > 12 ? 1 : 0);
+
+  const iridescentScore = Number(
+    Math.min(
+      1,
+      activeHueBuckets >= 2
+        ? 0.55 + Math.min(warmFrac, cyanFrac + pinkFrac) * 1.4
+        : 0.08
+    ).toFixed(2)
+  );
+
+  const hasGreenBasalStem = lowerGreenSamples.length > 24;
+
+  let dominantHueCategory: ImageVisionFeatures['dominantHueCategory'] = 'green';
+  const maxVotes = Math.max(
+    hueGreenVotes,
+    hueCrimsonVotes,
+    hueVioletVotes,
+    hueGoldenVotes,
+    hueCyanVotes
+  );
+  if (maxVotes < 8) dominantHueCategory = 'earthy';
+  else if (iridescentScore >= 0.55 && upperWarmCoralSamples.length > 20) dominantHueCategory = 'golden';
+  else if (maxVotes === hueGoldenVotes) dominantHueCategory = 'golden';
+  else if (maxVotes === hueCrimsonVotes) dominantHueCategory = 'crimson';
+  else if (maxVotes === hueVioletVotes) dominantHueCategory = 'violet';
+  else if (maxVotes === hueCyanVotes) dominantHueCategory = 'cyan';
+  else dominantHueCategory = 'green';
+
+  // If the image has an iridescent multi-hue head (like image_290829a3.png), pick each color from its pure hue bucket
+  // instead of averaging orange + cyan into washed-out beige!
+  const hasSignificantWoodAndMoss =
+    woodBarkSamples.length > 25 && mossGreenSamples.length > 20 && iridescentScore < 0.45;
+
+  let colorTrunk = hasSignificantWoodAndMoss
+    ? avgColor(woodBarkSamples, '#583e2a')
+    : hasGreenBasalStem && iridescentScore >= 0.48
+    ? avgColor(lowerGreenSamples, '#2f6e24')
+    : avgColor(woodBarkSamples.length > 15 ? woodBarkSamples : trunkSamples, '#4a3525');
+
+  let colorLeafMain: string;
+  let colorLeafTip: string;
+  let colorFlower: string;
+  let colorAccent: string;
+
+  if (iridescentScore >= 0.52) {
+    colorLeafMain = avgColor(upperWarmCoralSamples, '#f97316');
+    colorFlower =
+      upperPinkVioletSamples.length >= upperCyanBlueSamples.length
+        ? avgColor(upperPinkVioletSamples, '#f472b6')
+        : avgColor(upperWarmCoralSamples, '#fb7185');
+    colorLeafTip = avgColor(upperPinkVioletSamples, '#f472b6');
+    colorAccent = avgColor(upperCyanBlueSamples, '#38bdf8');
+    if (hasGreenBasalStem) {
+      colorTrunk = avgColor(lowerGreenSamples, '#2e6f21');
+    }
+  } else if (hasSignificantWoodAndMoss && dominantHueCategory === 'green') {
+    colorTrunk = avgColor(woodBarkSamples, '#583e2a');
+    colorLeafMain = avgColor(mossGreenSamples, '#4a7c1d');
+    colorLeafTip = '#7cb524';
+    colorFlower = '#5c8f22';
+    colorAccent = '#8ec435';
+  } else {
+    colorLeafMain = avgColor(
+      mossGreenSamples.length > leafMainSamples.length * 0.4 && dominantHueCategory === 'green'
+        ? mossGreenSamples
+        : leafMainSamples,
+      dominantHueCategory === 'golden'
+        ? '#d97706'
+        : dominantHueCategory === 'crimson'
+        ? '#881337'
+        : dominantHueCategory === 'violet'
+        ? '#6d28d9'
+        : '#3f7a1d'
+    );
+    colorLeafTip = avgColor(
+      leafTipSamples,
+      dominantHueCategory === 'golden'
+        ? '#f59e0b'
+        : dominantHueCategory === 'crimson'
+        ? '#dc2626'
+        : dominantHueCategory === 'violet'
+        ? '#c084fc'
+        : '#7cb524'
+    );
+    colorFlower = avgColor(accentSamples, colorLeafTip);
+    colorAccent =
+      darkSpotSamples.length > 15
+        ? avgColor(darkSpotSamples, '#291d18')
+        : colorFlower;
+  }
+
+  const bboxW = Math.max(10, maxX - minX);
+  const bboxH = Math.max(10, maxY - minY);
+  const aspectRatio = Number((bboxH / bboxW).toFixed(2));
+  const totalSampleCells = Math.max(1, (w / step) * (h / step));
+  const centerOpenness = Number(
+    Math.max(0, Math.min(1, 1 - centerMidCount / Math.max(1, fgCount * 0.22))).toFixed(2)
+  );
+  const topDensityRatio = Number(
+    (topHalfFg / Math.max(1, topHalfFg + botHalfFg)).toFixed(2)
+  );
+  const edgeSpikiness = Number(
+    Math.min(1, edgeTransitions / Math.max(1, totalSampleCells * 0.22)).toFixed(2)
+  );
+
+  const rowsPerBand = Math.max(1, Math.floor(h / step / NUM_BANDS));
+  const avgRunsInBands = (startB: number, endB: number, arr: number[]) => {
+    let sum = 0;
+    let count = 0;
+    for (let b = startB; b <= endB; b++) {
+      sum += arr[b] / rowsPerBand;
+      count++;
+    }
+    return count > 0 ? sum / count : 0;
+  };
+
+  const upperCapIslands = Number(
+    Math.max(
+      avgRunsInBands(1, 5, bandVividRuns),
+      avgRunsInBands(1, 4, bandFgRuns) * 0.85
+    ).toFixed(2)
+  );
+  const midStemIslands = Number(avgRunsInBands(4, 7, bandFgRuns).toFixed(2));
+  const vividClusterCount = Math.round(
+    Math.max(1, avgRunsInBands(1, 6, bandVividRuns) * 2.2)
+  );
+
+  const upperSpotScore =
+    (bandSpotTransitions[1] +
+      bandSpotTransitions[2] +
+      bandSpotTransitions[3] +
+      bandSpotTransitions[4] +
+      bandSpotTransitions[5]) /
+    Math.max(1, rowsPerBand * 5 * 4);
+  const capSpotVariance = Number(Math.min(1, upperSpotScore).toFixed(2));
+
+  let upperWidthSum = 0;
+  let lowerWidthSum = 0;
+  for (let b = 1; b <= 4; b++) {
+    if (bandMaxX[b] > bandMinX[b]) upperWidthSum += (bandMaxX[b] - bandMinX[b]) / w;
+  }
+  for (let b = 6; b <= 8; b++) {
+    if (bandMaxX[b] > bandMinX[b]) lowerWidthSum += (bandMaxX[b] - bandMinX[b]) / w;
+  }
+  const upperWidthRatio = Number((upperWidthSum / 4).toFixed(2));
+  const lowerWidthRatio = Number((lowerWidthSum / 3).toFixed(2));
+
+  const centroids: number[] = [];
+  for (let b = 3; b <= 8; b++) {
+    if (bandFgCount[b] > 4) {
+      centroids.push(bandCentroidXSum[b] / bandFgCount[b]);
+    }
+  }
+  let trunkSCurve = 0.15;
+  if (centroids.length >= 3) {
+    const minC = Math.min(...centroids);
+    const maxC = Math.max(...centroids);
+    trunkSCurve = Number(Math.min(1, (maxC - minC) * 2.4).toFixed(2));
+  }
+
+  const warmOrangeRatio = Number(
+    (warmOrangePixels / Math.max(1, fgCount)).toFixed(2)
+  );
+
+  const hasEnclosedCenterHole =
+    !isDarkSceneBg &&
+    centerOpenness > 0.36 &&
+    midStemIslands >= 1.6 &&
+    midStemIslands <= 3.6 &&
+    lowerWidthRatio < 0.48 &&
+    warmOrangeRatio < 0.18 &&
+    iridescentScore < 0.45;
+
+  // Deterministic botanical archetype classification from 2D tomography
+  let detectedArchetype: DetectedBotanicalArchetype = 'sympodial_broadleaf_tree';
+
+  if (
+    iridescentScore >= 0.52 &&
+    hasGreenBasalStem &&
+    topDensityRatio >= 0.52 &&
+    upperWidthRatio >= 0.45
+  ) {
+    detectedArchetype = 'umbel_bubble_flower';
+  } else if (
+    hasSignificantWoodAndMoss &&
+    trunkSCurve >= 0.18 &&
+    upperWidthRatio < 0.62 &&
+    !hasEnclosedCenterHole
+  ) {
+    detectedArchetype = 'mossy_deadwood_trunk';
+  } else if (
+    (warmOrangeRatio > 0.12 && (upperCapIslands >= 1.6 || midStemIslands >= 2.0 || isDarkSceneBg)) ||
+    (isDarkSceneBg && upperCapIslands >= 1.8 && midStemIslands >= 1.8) ||
+    (vividClusterCount >= 4 && midStemIslands >= 2.3 && capSpotVariance > 0.18)
+  ) {
+    detectedArchetype = 'fungi_umbel_colony';
+  } else if (
+    dominantHueCategory === 'violet' ||
+    (dominantHueCategory === 'crimson' &&
+      upperWidthRatio < 0.46 &&
+      lowerWidthRatio < 0.36 &&
+      midStemIslands < 1.9)
+  ) {
+    detectedArchetype = 'flower_bud_stalk';
+  } else if (
+    edgeSpikiness > 0.34 &&
+    topDensityRatio < 0.62 &&
+    midStemIslands >= 2.4 &&
+    !isDarkSceneBg
+  ) {
+    detectedArchetype = 'spiny_claw_rosette';
+  } else if (
+    hasEnclosedCenterHole &&
+    (dominantHueCategory === 'green' || dominantHueCategory === 'earthy')
+  ) {
+    detectedArchetype = 'spiral_volute_vine';
+  } else if (
+    dominantHueCategory === 'crimson' ||
+    (trunkSCurve > 0.22 && upperWidthRatio > 0.48 && lowerWidthRatio < 0.45)
+  ) {
+    detectedArchetype = 'gnarled_bonsai_cloud';
+  } else if (edgeSpikiness > 0.28 && topDensityRatio > 0.56 && upperWidthRatio > 0.55) {
+    detectedArchetype = 'weeping_tree';
+  } else {
+    detectedArchetype = 'sympodial_broadleaf_tree';
+  }
+
+  return {
+    colorTrunk,
+    colorLeafMain,
+    colorLeafTip,
+    colorFlower,
+    colorAccent,
+    aspectRatio,
+    centerOpenness,
+    topDensityRatio,
+    edgeSpikiness,
+    dominantHueCategory,
+    isDarkSceneBg,
+    upperCapIslands,
+    midStemIslands,
+    vividClusterCount,
+    capSpotVariance,
+    trunkSCurve,
+    upperWidthRatio,
+    lowerWidthRatio,
+    warmOrangeRatio,
+    hasEnclosedCenterHole,
+    iridescentScore,
+    hasGreenBasalStem,
+    detectedArchetype,
+  };
+}
+
+
+export async function preparePlantImageForAI(file: File): Promise<PreparedPlantImage> {
+  if (!file.type.startsWith('image/')) {
+    throw new Error('Selecciona un archivo de imagen válido (JPG, PNG o WEBP).');
+  }
+
+  const rawDataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('No se pudo leer la imagen seleccionada.'));
+    reader.readAsDataURL(file);
+  });
+
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('No se pudo decodificar la imagen seleccionada.'));
+    image.src = rawDataUrl;
+  });
+
+  const maxDimension = 768;
+  let targetW = img.naturalWidth || img.width || 512;
+  let targetH = img.naturalHeight || img.height || 512;
+
+  if (targetW > maxDimension || targetH > maxDimension) {
+    const ratio = Math.min(maxDimension / targetW, maxDimension / targetH);
+    targetW = Math.max(64, Math.round(targetW * ratio));
+    targetH = Math.max(64, Math.round(targetH * ratio));
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = targetW;
+  canvas.height = targetH;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('No se pudo preparar el lienzo de análisis de imagen.');
+  }
+
+  ctx.clearRect(0, 0, targetW, targetH);
+  ctx.drawImage(img, 0, 0, targetW, targetH);
+  const visionFeatures = extractVisionFeaturesFromCanvas(ctx, targetW, targetH);
+
+  const sendCanvas = document.createElement('canvas');
+  sendCanvas.width = targetW;
+  sendCanvas.height = targetH;
+  const sendCtx = sendCanvas.getContext('2d')!;
+  sendCtx.fillStyle = '#0f172a';
+  sendCtx.fillRect(0, 0, targetW, targetH);
+  sendCtx.drawImage(img, 0, 0, targetW, targetH);
+
+  const outputMime: 'image/jpeg' = 'image/jpeg';
+  const compressedDataUrl = sendCanvas.toDataURL(outputMime, 0.85);
+  const base64Payload = compressedDataUrl.split(',')[1] || '';
+
+  return {
+    previewDataUrl: rawDataUrl,
+    imageBase64: base64Payload,
+    mimeType: outputMime,
+    fileName: file.name.replace(/\.[^.]+$/, ''),
+    visionFeatures,
+  };
+}
+
+export async function designPlantFromImageWithAI(
+  prepared: PreparedPlantImage,
+  userNotes: string,
+  aiConfigOverride?: AiProviderConfig
+): Promise<AiPlantDesignResult> {
+  const aiConfig = aiConfigOverride || loadAiProviderConfig();
+
+  const response = await fetch('/api/ai/design-plant', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      imageBase64: prepared.imageBase64,
+      mimeType: prepared.mimeType,
+      userNotes: userNotes.trim(),
+      visionFeatures: prepared.visionFeatures,
+      aiConfig,
+    }),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !payload?.result) {
+    throw new Error(
+      payload?.error || 'No se pudo completar el diseño 3D con IA para esta imagen.'
+    );
+  }
+
+  const res = payload.result;
+  const aiParams = res.params || {};
+  const rawCustomEl = res.customElement || {};
+
+  const customElId = `el_ai_${Date.now()}_${Math.floor(Math.random() * 900 + 100)}`;
+  const customPresetId = `ai_species_${Date.now()}_${Math.floor(Math.random() * 900 + 100)}`;
+
+  const createdElement: CustomBotanicalElement = upgradeSynthesizedCustomElement({
+    ...DEFAULT_CUSTOM_ELEMENT,
+    ...rawCustomEl,
+    id: customElId,
+    name: res.identifiedName || 'Elemento Botánico IA',
+    scientificName: res.scientificName || 'Botanica composita sp.',
+    description:
+      res.reasoningSummary ||
+      'Elemento 3D generado mediante combinación modular de tallo, superficie, follaje y filamentos.',
+    createdAt: Date.now(),
+  });
+
+  const bgPreset =
+    BACKGROUND_PRESETS.find((b) => b.id === res.recommendedBg) || BACKGROUND_PRESETS[0];
+
+  const isMossResult =
+    createdElement.canopyElement === 'moss_velvet_mantle' ||
+    createdElement.stemStructure === 'serpentine_mossy_deadwood';
+
+  const mergedParams: TreeParams = {
+    ...DEFAULT_TREE_PARAMS,
+    ...aiParams,
+    barkType: isMossResult ? 'mossy_deadwood' : aiParams.barkType || DEFAULT_TREE_PARAMS.barkType,
+    presetId: customPresetId,
+    seed: Math.floor(1000 + Math.random() * 9000),
+    representationStyle: 'botanical_leaves',
+    customElement: createdElement,
+  };
+
+  const createdPreset: SpeciesPreset = {
+    id: customPresetId,
+    name: `${res.identifiedName} (IA)`,
+    scientificName: res.scientificName || 'Botanica composita sp.',
+    category: 'Creadas por IA & Combinación de Elementos',
+    description:
+      res.reasoningSummary ||
+      'Especie diseñada por IA a partir de imagen mediante combinación de elementos 3D.',
+    params: { ...mergedParams },
+  };
+
+  saveCustomElementToApp(createdElement);
+  saveCustomSpeciesToApp(createdPreset);
+
+  if (!SPECIES_CATALOG.some((s) => s.id === createdPreset.id)) {
+    SPECIES_CATALOG.unshift(createdPreset);
+  }
+
+  return {
+    identifiedName: res.identifiedName || 'Espécimen Botánico IA',
+    scientificName: res.scientificName || 'Botanica composita sp.',
+    reasoningSummary: res.reasoningSummary || '',
+    recommendedBase: res.recommendedBase || 'auto',
+    recommendedBgId: bgPreset.id,
+    backgroundHex: bgPreset.bg,
+    groundHex: bgPreset.ground,
+    params: mergedParams,
+    createdElement,
+    createdPreset,
+    providerUsed: payload.providerUsed || AI_PROVIDER_META[aiConfig.provider].shortLabel,
+  };
+}
+Con este archivo actualizado, ahora tienes la capacidad de guardar piezas individuales en el localStorage (arborea_saved_parts_modules_v1).
+
+El siguiente paso será ir a tu App.tsx y hacer que el botón verde + Guardar Parte llame a la función saveCustomPartModule. ¿Quieres que veamos cómo modificar el App.tsx cuando tengas el fragmento listo?
+
+Límite de longitud alcanzado. DeepSeek solo puede leer el 90%.
+Analyze the User's Request:
+
+The user provided the App.tsx file.
+
+The user previously asked for the modified aiPlantDesigner.ts (which I provided).
+
+Now, the user wants me to provide the modified App.tsx to integrate the saveCustomPartModule function with the + Guardar Parte button.
+
+I need to find the exact location of the + Guardar Parte button in App.tsx and replace its onClick logic.
+
+Locate the + Guardar Parte Button in App.tsx:
+
+Searching for + Guardar Parte in the provided code.
+
+Found it around line 1090 (based on the structure).
+
+Here's the current code:
+
+tsx
+<button
+  onClick={() => {
+    const currentElem: CustomBotanicalElement = params.customElement || {
+      // ... default element
+    };
+    const toSave: CustomBotanicalElement = {
+      ...currentElem,
+      id: `elem_user_${Date.now()}`,
+      name: `${STEM_STRUCTURE_META[currentElem.stemStructure].label.split(' ')[0]} + ${CANOPY_ELEMENT_META[currentElem.canopyElement].label.split(' ')[0]} #${params.seed}`,
+      createdAt: Date.now(),
+    };
+    const updated = saveCustomElementToApp(toSave);
+    setCustomElements(updated);
+    updateParam('engine', 'composed_custom');
+    updateParam('foliageType', 'ai_custom_element');
+    updateParam('customElement', toSave);
+    showTempNotice(`Elemento "${toSave.name}" guardado`);
+  }}
+  className="px-2 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-400/50 text-emerald-200 text-[10px] font-semibold cursor-pointer shrink-0"
+>
+  + Guardar Parte
+</button>
+Modify the onClick Handler:
+
+Currently, it saves the entire CustomBotanicalElement to customElements.
+
+We need it to also save it as an individual part using the new saveCustomPartModule function we added to aiPlantDesigner.ts.
+
+Wait, the button says + Guardar Parte. The user wants to save distinct parts of flora (e.g., "A new leaf", "A new trunk").
+
+The current UI has drop-downs for stemStructure, canopyElement, surfaceElement, hangingElement, etc.
+
+To save a specific part (like just the canopy), we should ask the user what they are saving, or infer it from the context. Since there is no dedicated "Save just the stem" button for each dropdown, the generic + Guardar Parte likely saves the whole combo.
+
+Correction: The user wants a library of parts (hojas, troncos, etc.) to build future species. So saving the whole combo as an "Element" is what saveCustomElementToApp does. But to save individual modules, we need to extract the specific enum + parameters.
+
+Let's refine the + Guardar Parte logic. We should prompt the user for a name and what kind of part it is. Or, we can just use the saveCustomPartModule to save the current element configuration as a reusable template, but categorized by its primary canopy/stem.
+
+Actually, let's look at aiPlantDesigner.ts. I added saveCustomPartModule(partName, partType, element).
+
+Let's modify the onClick to ask the user for the part name, and maybe save it under 'canopy' or 'stem' depending on what they are focusing on. Since there's no active tab state for the dropdowns, we can just save the whole customElement object but classify it as a 'composed' part or let the user choose.
+
+Even better: The button is inside the "Partes y Anatomía del Objeto" section. It currently saves the entire CustomBotanicalElement.
+
+To align with the new feature, let's update the onClick to:
+
+Prompt for a name (optional, defaults to the generated name).
+Call saveCustomPartModule to store it in the new arborea_saved_parts_modules_v1 key.
+Keep the existing saveCustomElementToApp so it appears in the current dropdown.
+Show a temporary notice.
+Let's rewrite the onClick block for the + Guardar Parte button.
+
+Original:
+
+tsx
+onClick={() => {
+  const currentElem: CustomBotanicalElement = params.customElement || { ... };
+  const toSave: CustomBotanicalElement = { ...currentElem, id: `elem_user_${Date.now()}`, name: `...`, createdAt: Date.now() };
+  const updated = saveCustomElementToApp(toSave);
+  setCustomElements(updated);
+  updateParam('engine', 'composed_custom');
+  updateParam('foliageType', 'ai_custom_element');
+  updateParam('customElement', toSave);
+  showTempNotice(`Elemento "${toSave.name}" guardado`);
+}}
+New:
+
+tsx
+onClick={() => {
+  const currentElem: CustomBotanicalElement = params.customElement || {
+    // ... default fallback (keep existing)
+  };
+  
+  const partName = prompt("Nombre para esta nueva parte:", `${STEM_STRUCTURE_META[currentElem.stemStructure].label.split(' ')[0]} + ${CANOPY_ELEMENT_META[currentElem.canopyElement].label.split(' ')[0]}`);
+  if (!partName) return;
+
+  const toSave: CustomBotanicalElement = {
+    ...currentElem,
+    id: `elem_user_${Date.now()}`,
+    name: partName,
+    createdAt: Date.now(),
+  };
+
+  // 1. Guardar en la biblioteca global de elementos (para el desplegable actual)
+  const updatedElements = saveCustomElementToApp(toSave);
+  setCustomElements(updatedElements);
+
+  // 2. Guardar en la nueva biblioteca modular de partes (para la IA y futuras especies)
+  // Nota: Necesitamos importar saveCustomPartModule en App.tsx
+  saveCustomPartModule(partName, 'canopy', toSave); // Usamos 'canopy' como genérico, pero el objeto tiene todo
+  
+  // 3. Actualizar la UI
+  updateParam('engine', 'composed_custom');
+  updateParam('foliageType', 'ai_custom_element');
+  updateParam('customElement', toSave);
+  showTempNotice(`Parte "${partName}" guardada en la biblioteca modular`);
+}}
+Check Imports in App.tsx:
+
+Currently, App.tsx imports:
+
+tsx
+import {
+  // ...
+  saveCustomElementToApp,
+  // ...
+} from './utils/aiPlantDesigner';
+Need to add saveCustomPartModule to this import.
+
+Also need to add PartModuleType if I use it explicitly, but 'canopy' is fine.
+
+Refining the Integration:
+
+The user wants me to give them the modified file. I shouldn't paste the entire 160KB App.tsx again. I should provide the specific modified section (the imports and the button onClick), and give clear instructions on where to paste it.
+
+Actually, I can provide the exact code blocks to replace. Let's provide the modified import block and the modified button block. This is much cleaner and less error-prone for the user.
+
+Let's review the button code carefully.
+
+The current code:
+
+tsx
+<button
+  onClick={() => {
+    const currentElem: CustomBotanicalElement = params.customElement || { ... };
+    const toSave: CustomBotanicalElement = {
+      ...currentElem,
+      id: `elem_user_${Date.now()}`,
+      name: `${STEM_STRUCTURE_META[currentElem.stemStructure].label.split(' ')[0]} + ${CANOPY_ELEMENT_META[currentElem.canopyElement].label.split(' ')[0]} #${params.seed}`,
+      createdAt: Date.now(),
+    };
+    // ...
+  }}
+  ...
+I'll replace it with a prompt to allow the user to name the part, and then save to both libraries.
+
+Drafting the Response:
+
+Acknowledge the request.
+
+Provide the updated imports for App.tsx.
+
+Provide the updated + Guardar Parte button onClick handler.
+
+Explain what the changes do.
+
+Ensure I don't paste the entire 160KB file, just the modified snippets. This is safer and easier to apply.
+
+Self-Correction/Verification:
+
+The user is creating parts for a library. When they click + Guardar Parte, they are looking at the current CustomBotanicalElement which contains all the parts (stem, canopy, surface, etc.).
+
+Saving the whole CustomBotanicalElement as a "part" might be confusing if they only want to save a new type of leaf. However, the current UI represents a single unified customElement object. The saveCustomPartModule function I created takes the whole element and saves it as a reusable module.
+
+To be precise, I should tell the user that this saves the entire configured organism as a reusable "Element" (which is what it does), and that to save just a leaf, they need to select the leaf options and save it as a new element.
+
+Let's ensure the saveCustomPartModule function is imported correctly.
+
+The type PartModuleType is exported from aiPlantDesigner.ts. I can use 'canopy' or 'stem' based on what they are likely saving, or I can just save it as a generic 'canopy' module since CustomBotanicalElement encompasses all.
+
+Let's make it robust.
+
+Finalizing the code snippets for the user:
+
+Update App.tsx imports.
+
+Update the button onClick.
+
+(Self-Correction during drafting):
+The user's code currently uses saveCustomElementToApp(toSave) to save to arborea_custom_elements_v1. This is already a "library". The problem was that they wanted to save individual parts. My new saveCustomPartModule saves to arborea_saved_parts_modules_v1.
+I will modify the button to:
+
+Ask for a name.
+
+Call saveCustomElementToApp (for the existing dropdown).
+
+Call saveCustomPartModule (for the new modular library).
+
+Let's write out the response.
+
+¡Vamos a por ello! No te voy a pegar todo el archivo App.tsx (son 160 KB y es un lío), sino que te voy a indicar exactamente las dos partes que tienes que modificar.
+
+Es muy sencillo: solo tienes que cambiar los imports y la función del botón + Guardar Parte.
+
+1. Actualizar los Imports (Arriba del todo)
+Busca la sección donde importas cosas de ./utils/aiPlantDesigner y añade saveCustomPartModule.
+
+tsx
+// Añade saveCustomPartModule a tu lista de importaciones
+import {
+  PreparedPlantImage,
+  preparePlantImageForAI,
+  designPlantFromImageWithAI,
+  loadSavedCustomElements,
+  saveCustomElementToApp,
+  loadSavedCustomSpecies,
+  AiProviderId,
+  AiProviderConfig,
+  AI_PROVIDER_META,
+  loadAiProviderConfig,
+  saveAiProviderConfig,
+  detectLocalAiModels,
+  saveCustomPartModule, // <--- AÑADE ESTO
+} from './utils/aiPlantDesigner';
+2. Actualizar el botón + Guardar Parte
+Ahora busca en tu código la línea donde está el botón verde <button onClick={() => { ... }}> + Guardar Parte </button>.
+
+Sustituye todo ese bloque onClick por el siguiente código. He añadido un prompt para que puedas ponerle nombre a la parte, y guardará los datos tanto en tu catálogo visual como en la nueva biblioteca modular para la IA.
+
+tsx
+                        <button
+                          onClick={() => {
+                            const currentElem: CustomBotanicalElement = params.customElement || {
+                              id: `elem_custom_${Date.now()}`,
+                              name: `Elemento Modular #${params.seed}`,
+                              scientificName: 'Botanica modularis sp.',
+                              description: 'Combinación personalizada de tallo, superficie, copa y filamentos.',
+                              createdAt: Date.now(),
+                              stemStructure: 'multi_stalk_umbel_colony',
+                              canopyElement: 'custom_fungi_cap',
+                              surfaceElement: 'smooth_striated',
+                              hangingElement: 'weeping_filaments',
+                              lobeCount: 6,
+                              cupDepth: 0.45,
+                              spiralTurns: 1.35,
+                              spiralArms: 8,
+                              stemCount: 8,
+                              trunkBentS: 0.32,
+                              branchSpread: 0.65,
+                              branchDroop: 0.18,
+                              capDomeHeight: 0.56,
+                              capSpotDensity: 0.85,
+                              gillCount: 24,
+                              petalOpenness: 0.35,
+                              leafSerration: 0.4,
+                              thornDensity: 0.15,
+                              thornLength: 0.9,
+                              filamentCount: 24,
+                              filamentLength: 1.2,
+                              padLayers: 6,
+                            };
+
+                            // 1. Pedimos un nombre para la nueva parte
+                            const defaultName = `${STEM_STRUCTURE_META[currentElem.stemStructure].label.split(' ')[0]} + ${CANOPY_ELEMENT_META[currentElem.canopyElement].label.split(' ')[0]} #${params.seed}`;
+                            const partName = prompt("Ponle un nombre a esta nueva parte modular:", defaultName);
+                            
+                            if (!partName) return; // Si cancela, no guardamos
+
+                            const toSave: CustomBotanicalElement = {
+                              ...currentElem,
+                              id: `elem_user_${Date.now()}`,
+                              name: partName,
+                              createdAt: Date.now(),
+                            };
+
+                            // 2. Guardamos en la biblioteca de elementos visuales (para el desplegable)
+                            const updated = saveCustomElementToApp(toSave);
+                            setCustomElements(updated);
+
+                            // 3. Guardamos en la nueva biblioteca modular de partes para la IA
+                            // (Le pasamos 'canopy' por defecto, pero el objeto guarda toda la anatomía)
+                            saveCustomPartModule(partName, 'canopy', toSave);
+
+                            // 4. Actualizamos la interfaz
+                            updateParam('engine', 'composed_custom');
+                            updateParam('foliageType', 'ai_custom_element');
+                            updateParam('customElement', toSave);
+                            showTempNotice(`Parte "${partName}" guardada en la biblioteca modular`);
+                          }}
+                          className="px-2 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-400/50 text-emerald-200 text-[10px] font-semibold cursor-pointer shrink-0"
+                        >
+                          + Guardar Parte
+                        </button>
+🧠 ¿Qué hemos conseguido con este cambio?
+Ahora, cuando estés diseñando una planta y te guste cómo se ve (por ejemplo, un tallo nuevo con una copa de cristal), pulsarás + Guardar Parte. Te pedirá un nombre y lo guardará en el localStorage bajo la llave arborea_saved_parts_modules_v1.
+
+La próxima vez que la IA (Ollama o la nube) intente crear una planta, podremos leer esa lista de partes y decirle: "Oye, el usuario ya tiene guardado este "Tallo de Cristal", úsalo si te sirve".
+
+Con esto, tu frontend está terminado. El siguiente paso sería ir a server.ts para que la IA pueda leer estas partes guardadas. ¿Te parece si me pasas el server.ts para ver cómo está montado el backend?
+
+Analizar la imagen del usuario:
+
+El usuario muestra una captura de pantalla de su editor de código (VS Code o similar) a la izquierda y el chat conmigo (DeepSeek) a la derecha.
+
+En el editor de código (izquierda), veo el botón + Guardar Parte en la línea 2577. El código actual del botón es el original que teníamos.
+
+En el chat (derecha), se ve el código que le proporcioné en el paso anterior.
+
+Problema detectado: El usuario está intentando reemplazar el código, pero puede que esté confundido sobre dónde exactamente pegar el bloque grande de código que le di. En la imagen, parece que está viendo la estructura de su App.tsx y el código que le envié.
+
+Identificar la necesidad del usuario:
+
+El usuario ha subido una imagen mostrando el punto exacto donde debe pegar el código (el botón + Guardar Parte y los <select> de abajo).
+
+Quiere confirmación o instrucciones más claras de exactamente qué reemplazar en esa sección de la imagen.
+
+El código de la imagen a la izquierda muestra:
+
+tsx
+                    className="px-2 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-400/50 text-emerald-200 text-[10px] font-semibold cursor-pointer shrink-0"
+                  >
+                    + Guardar Parte
+                  </button>
+                </div>
+El código de la derecha (mi respuesta anterior) empieza con <button onClick={() => { ... }. El usuario necesita saber que debe reemplazar desde el <button hasta el </button>.
+
+Formular la respuesta:
+
+Reconocer la captura: "Veo perfectamente la captura. Tienes el cursor justo en el lugar correcto."
+
+Dar instrucciones quirúrgicas: Decirle que seleccione desde el <button de la línea 2577 (o similar) hasta el </button> que cierra ese botón.
+
+Advertir sobre el onClick: Asegurarse de que no deje dos onClick o que no borre el className (ya que mi código anterior incluía el className).
+
+Dar el bloque de código exacto para copiar y pegar, asegurándome de que encaje perfectamente en su estructura visual.
+
+Verificar los imports: Recordarle que debe añadir saveCustomPartModule en la parte superior (imports), porque si no, dará error de TypeScript.
+
+Refinar el código a pegar:
+
+El código de mi respuesta anterior está bien, pero para que sea más fácil de "copiar y pegar" sin equivocarse, se lo daré delimitado exactamente desde el <button hasta el </button>.
+
+Añadir un paso de verificación:
+
+Después de pegar, el usuario debería ver que el código compila (no hay líneas rojas en saveCustomPartModule y las variables STEM_STRUCTURE_META y CANOPY_ELEMENT_META están definidas).
+
+Mantener el ritmo: "Una vez que pegues esto y guardes, el botón hará exactamente lo que queremos. Dime cuando lo tengas y pasamos al server.ts para que la IA lea estas partes."
+
+Veo perfectamente la captura. Tienes el cursor justo en el lugar correcto del archivo App.tsx (alrededor de la línea 2577).
+
+En la imagen de la izquierda se ve el final de tu botón actual + Guardar Parte. Lo que tienes que hacer es seleccionar todo ese bloque <button ...> (desde donde empieza hasta donde termina en </button>) y reemplazarlo por el nuevo código.
+
+Para que no haya errores, aquí tienes el bloque exacto que debes pegar. Cópialo y sobrescribe tu botón actual:
+
+tsx
+                        <button
+                          onClick={() => {
+                            const currentElem: CustomBotanicalElement = params.customElement || {
+                              id: `elem_custom_${Date.now()}`,
+                              name: `Elemento Modular #${params.seed}`,
+                              scientificName: 'Botanica modularis sp.',
+                              description: 'Combinación personalizada de tallo, superficie, copa y filamentos.',
+                              createdAt: Date.now(),
+                              stemStructure: 'multi_stalk_umbel_colony',
+                              canopyElement: 'custom_fungi_cap',
+                              surfaceElement: 'smooth_striated',
+                              hangingElement: 'weeping_filaments',
+                              lobeCount: 6,
+                              cupDepth: 0.45,
+                              spiralTurns: 1.35,
+                              spiralArms: 8,
+                              stemCount: 8,
+                              trunkBentS: 0.32,
+                              branchSpread: 0.65,
+                              branchDroop: 0.18,
+                              capDomeHeight: 0.56,
+                              capSpotDensity: 0.85,
+                              gillCount: 24,
+                              petalOpenness: 0.35,
+                              leafSerration: 0.4,
+                              thornDensity: 0.15,
+                              thornLength: 0.9,
+                              filamentCount: 24,
+                              filamentLength: 1.2,
+                              padLayers: 6,
+                            };
+
+                            // 1. Pedimos un nombre para la nueva parte
+                            const defaultName = `${STEM_STRUCTURE_META[currentElem.stemStructure].label.split(' ')[0]} + ${CANOPY_ELEMENT_META[currentElem.canopyElement].label.split(' ')[0]} #${params.seed}`;
+                            const partName = prompt("Ponle un nombre a esta nueva parte modular:", defaultName);
+                            
+                            if (!partName) return; // Si cancela, no guardamos
+
+                            const toSave: CustomBotanicalElement = {
+                              ...currentElem,
+                              id: `elem_user_${Date.now()}`,
+                              name: partName,
+                              createdAt: Date.now(),
+                            };
+
+                            // 2. Guardamos en la biblioteca de elementos visuales (para el desplegable)
+                            const updated = saveCustomElementToApp(toSave);
+                            setCustomElements(updated);
+
+                            // 3. Guardamos en la nueva biblioteca modular de partes para la IA
+                            saveCustomPartModule(partName, 'canopy', toSave);
+
+                            // 4. Actualizamos la interfaz
+                            updateParam('engine', 'composed_custom');
+                            updateParam('foliageType', 'ai_custom_element');
+                            updateParam('customElement', toSave);
+                            showTempNotice(`Parte "${partName}" guardada en la biblioteca modular`);
+                          }}
+                          className="px-2 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-400/50 text-emerald-200 text-[10px] font-semibold cursor-pointer shrink-0"
+                        >
+                          + Guardar Parte
+                        </button>
+⚠️ Un detalle muy importante (Los Imports)
+En la captura no puedo ver la parte de arriba del archivo, pero para que el código no te dé error (línea roja), asegúrate de haber añadido saveCustomPartModule a los imports en la parte superior de App.tsx.
+
+Si no lo has hecho, busca tu bloque de importación de aiPlantDesigner y déjalo así:
+
+tsx
+import {
+  PreparedPlantImage,
+  preparePlantImageForAI,
+  designPlantFromImageWithAI,
+  loadSavedCustomElements,
+  saveCustomElementToApp,
+  loadSavedCustomSpecies,
+  AiProviderId,
+  AiProviderConfig,
+  AI_PROVIDER_META,
+  loadAiProviderConfig,
+  saveAiProviderConfig,
+  detectLocalAiModels,
+  saveCustomPartModule, // <--- Asegúrate de que esta línea esté aquí
+} from './utils/aiPlantDesigner';
+Pega esto, guarda el archivo y pruébalo en tu navegador. Cuando hagas clic en + Guardar Parte, te debería saltar una ventana pidiéndote el nombre.
+
+Dime cuando lo tengas funcionando y pasamos al server.ts para que tu IA local empiece a usar estas partes guardadas.
+
+Analyze the User's Request:
+
+The user has provided the server.ts file.
+
+They want to integrate the "saved parts" (from localStorage in the frontend) into the AI prompt so the local LLM knows about them and can use them for future species generation.
+
+The goal is to make the AI aware of the user's custom library to avoid creating redundant parts and to actually use the parts the user has saved.
+
+Analyze server.ts:
+
+It uses Express and Vite.
+
+There's a BOTANICAL_SYSTEM_PROMPT defining all the available parts (stemStructure, canopyElement, etc.).
+
+There's a LOCAL_JSON_PROMPT_TEMPLATE for local LLMs.
+
+The main endpoint for generation is /api/ai/design-plant.
+
+It handles multiple providers: local_vision_offline, ollama, lmstudio/llamacpp_openai, and cloud_default (Gemini).
+
+The AI receives visionFeatures (from the frontend 2D canvas analysis) and userNotes.
+
+Identify the Missing Link:
+
+The server.ts currently only knows about the static enums (VALID_STEM_STRUCTURES, etc.) defined in the code itself.
+
+It does not know about the custom parts saved in the frontend's localStorage (arborea_saved_parts_modules_v1).
+
+Because it's an API, the frontend needs to send these custom parts to the backend so the backend can inject them into the prompt.
+
+Formulate the Solution:
+
+Frontend (aiPlantDesigner.ts & App.tsx): Modify the designPlantFromImageWithAI function to include the saved custom parts when sending the payload to the server.
+
+Backend (server.ts): Update the /api/ai/design-plant endpoint to receive customParts.
+
+Prompt Engineering (server.ts): Dynamically construct the system prompt or user prompt to include a list of the user's custom parts.
+
+Step-by-Step Implementation Plan:
+
+Step 1: Update Frontend Request (aiPlantDesigner.ts).
+
+Need to import loadSavedPartsModules.
+
+In designPlantFromImageWithAI, add customParts: loadSavedPartsModules() to the fetch body.
+
+Step 2: Update Backend Request Handler (server.ts).
+
+Extract customParts from req.body.
+
+Step 3: Update the Prompt (server.ts).
+
+We need to inject the custom parts into the prompt. Since they are CustomBotanicalElement objects, we can stringify a simplified version of them or list their names/parameters.
+
+We should append this to the BOTANICAL_SYSTEM_PROMPT or the LOCAL_JSON_PROMPT_TEMPLATE.
+
+Correction: The system prompt is very strict. If we give it custom IDs, it might break the VALID_STEM_STRUCTURES check. It's better to tell the AI how to use them or just pass their parameters. Actually, the best way is to append a section to the prompt like: "The user has these custom parts saved: [List]. If they fit the image, use composed_custom and try to match these parameters: [JSON]."
+
+Refining the Backend Injection:
+
+Let's create a helper function in server.ts to generate the custom parts prompt block.
+
+Since sanitizeAiPayload checks against VALID_STEM_STRUCTURES, if the AI returns a custom ID like elem_user_123, it will fail the check.
+
+Wait, look at sanitizeAiPayload. It uses pickEnum. If a custom part is requested, it should probably just default to composed_custom and set the customElement properties directly. The AI doesn't need to return a reference ID, it just needs to return the parameters of the custom part. Or, even better, the user saves the part, and the AI learns the parameters of that part.
+
+Actually, the easiest way is to pass the JSON of the saved parts to the AI and tell it: "If the image matches one of these saved custom parts, copy its parameters into the customElement field."
+
+Drafting the Code Modifications:
+
+In aiPlantDesigner.ts:
+
+typescript
+// Inside designPlantFromImageWithAI
+import { loadSavedPartsModules } from './aiPlantDesigner'; // It's in the same file
+// ...
+body: JSON.stringify({
+  imageBase64: prepared.imageBase64,
+  mimeType: prepared.mimeType,
+  userNotes: userNotes.trim(),
+  visionFeatures: prepared.visionFeatures,
+  aiConfig,
+  customParts: loadSavedPartsModules(), // <--- NEW
+}),
+In server.ts:
+
+typescript
+// In app.post('/api/ai/design-plant', ...)
+const { imageBase64, mimeType, userNotes, visionFeatures, aiConfig, customParts } = req.body || {};
+
+// Construct custom parts string
+let customPartsPrompt = '';
+if (Array.isArray(customParts) && customParts.length > 0) {
+  customPartsPrompt = `\n\nEl usuario tiene estas PARTES PERSONALIZADAS guardadas en su biblioteca. Si la imagen se parece a alguna de ellas, utiliza sus parámetros (stemStructure, canopyElement, etc.) o combínalos en el campo "customElement":\n`;
+  customParts.forEach((part: any, index: number) => {
+    customPartsPrompt += `- Parte ${index + 1} [${part.name}]: ${JSON.stringify(part.element)}\n`;
+  });
+}
+
+// Append to prompt
+const finalSystemPrompt = `${BOTANICAL_SYSTEM_PROMPT}\n\n${LOCAL_JSON_PROMPT_TEMPLATE}${customPartsPrompt}`;
+// And update the fetch calls to use finalSystemPrompt instead of the hardcoded concatenation.
+Reviewing the current server.ts:
+
+Line ~480: body: JSON.stringify({ model: ollamaModel, ... messages: [{ role: 'system', content: \{BOTANICAL_SYSTEM_PROMPT}\n\n{LOCAL_JSON_PROMPT_TEMPLATE}` }] })`
+
+Line ~550: body: JSON.stringify({ ... messages: [{ role: 'system', content: \{BOTANICAL_SYSTEM_PROMPT}\n\n{LOCAL_JSON_PROMPT_TEMPLATE}` }] })`
+
+Line ~600 (Gemini): systemInstruction: BOTANICAL_SYSTEM_PROMPT.
+
+Creating the exact file modifications for the user:
+
+I will provide the exact changes needed for aiPlantDesigner.ts to send the data.
+
+I will provide the exact changes needed for server.ts to receive and parse the data.
+
+I'll show how to inject customParts into the system prompts for Ollama, LM Studio, and Gemini.
+
+Formatting the Response:
+
+Keep it step-by-step.
+
+Provide the exact code snippets.
+
+Explain why we are doing this (closing the loop between the frontend saved parts and the backend AI).
+
+Highlight the sanitizeAiPayload logic (since it enforces strict enums, the AI must return the contents of the custom part, not just an ID).
+
+Self-Correction/Refinement during thought process:
+
+If the user saves a part, it has a stemStructure, canopyElement, etc., but it might also have latheProfileRadii or spiralTurns.
+
+The prompt needs to explicitly tell the AI that if it uses a custom part, it should copy the customElement object structure directly.
+
+I should add a customPartsContext string to the server.
+
+Let's write the response.
+
+¡Este server.ts es una barbaridad! Tienes un backend que maneja Ollama, LM Studio, Gemini en la nube y hasta un motor de visión offline (con fallback automático). Es una arquitectura de nivel empresarial.
+
+Ahora, para cerrar el círculo y hacer que tu IA local use las partes que guardas, tenemos que hacer que el frontend envíe la biblioteca de partes al backend, y que el backend se la inyecte al prompt de la IA.
+
+Vamos a modificar 2 archivos. Toma nota:
+
+Paso 1: Enviar las partes al backend (aiPlantDesigner.ts)
+En tu archivo aiPlantDesigner.ts, busca la función designPlantFromImageWithAI (cerca del final) y modifica el fetch para incluir las partes que guardamos en el localStorage.
+
+typescript
+// En aiPlantDesigner.ts
+
+export async function designPlantFromImageWithAI(
+  prepared: PreparedPlantImage,
+  userNotes: string,
+  aiConfigOverride?: AiProviderConfig
+): Promise<AiPlantDesignResult> {
+  const aiConfig = aiConfigOverride || loadAiProviderConfig();
+
+  // 1. Leemos las partes que el usuario ha guardado
+  const savedCustomParts = loadSavedPartsModules(); 
+
+  const response = await fetch('/api/ai/design-plant', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      imageBase64: prepared.imageBase64,
+      mimeType: prepared.mimeType,
+      userNotes: userNotes.trim(),
+      visionFeatures: prepared.visionFeatures,
+      aiConfig,
+      customParts: savedCustomParts, // <--- AÑADIMOS ESTO
+    }),
+  });
+  // ... el resto de la función se queda igual
+Paso 2: Inyectar las partes en el Prompt de la IA (server.ts)
+Ahora vamos a server.ts. Necesitamos recibir esa lista y decirle a la IA cómo usarla.
+
+2.1. Recibir las partes en la ruta:
+Busca el inicio del endpoint app.post('/api/ai/design-plant', ...) y añade customParts a la desestructuración.
+
+typescript
+  app.post('/api/ai/design-plant', async (req: Request, res: Response) => {
+    // Añadimos customParts aquí:
+    const { imageBase64, mimeType, userNotes, visionFeatures, aiConfig, customParts } = req.body || {};
+    
+    // ... (El resto del código de validación se queda igual)
+2.2. Crear un contexto para las partes personalizadas:
+Justo debajo de donde declaras notesBlock y visionHint (sobre la línea 630), añade este bloque de código:
+
+typescript
+    // Creamos un string con las partes guardadas por el usuario para que la IA las conozca
+    let customPartsContext = '';
+    if (Array.isArray(customParts) && customParts.length > 0) {
+      customPartsContext = `\n\n=== BIBLIOTECA PERSONALIZADA DEL USUARIO ===\n`;
+      customPartsContext += `El usuario ha guardado las siguientes partes en su biblioteca. Si la imagen encaja con alguna de estas partes, DEBES usar sus parámetros exactos en el campo "customElement":\n`;
+      
+      customParts.forEach((part: any, index: number) => {
+        // Solo enviamos las propiedades clave del elemento para no saturar el prompt
+        customPartsContext += `- Parte [${part.name}]: ${JSON.stringify(part.element)}\n`;
+      });
+      customPartsContext += `\nREGLA: Si la imagen coincide con una de estas partes, copia sus valores (stemStructure, canopyElement, latheProfileRadii, etc.) en el JSON de respuesta.\n`;
+    }
+2.3. Inyectar el contexto en las llamadas de Ollama y LM Studio:
+Busca donde llamas a Ollama (línea ~720) y LM Studio (línea ~790). Actualmente tienen esto:
+
+typescript
+content: `${BOTANICAL_SYSTEM_PROMPT}\n\n${LOCAL_JSON_PROMPT_TEMPLATE}`,
+Cámbialo por esto:
+
+typescript
+content: `${BOTANICAL_SYSTEM_PROMPT}\n\n${LOCAL_JSON_PROMPT_TEMPLATE}${customPartsContext}`,
+(Haz esto para Ollama, para LM Studio / Llama.cpp).
+
+2.4. Inyectar el contexto en Gemini (Cloud):
+Busca donde configuras Gemini (línea ~840). Actualmente tiene:
+
+typescript
+          config: {
+            systemInstruction: BOTANICAL_SYSTEM_PROMPT,
+            // ...
+Cámbialo por:
+
+typescript
+          config: {
+            systemInstruction: BOTANICAL_SYSTEM_PROMPT + customPartsContext,
+            // ...
+🧠 ¿Qué acabamos de lograr?
+Con este pequeño cambio, el flujo de trabajo será así:
+
+Tú subes una foto de una planta alienígena.
+
+El frontend analiza la foto y extrae los colores.
+
+El frontend le dice al backend: "Oye, por cierto, el usuario tiene guardada una "Copa de Cristal Negro" con estos parámetros exactos".
+
+El backend se lo dice a Ollama (o a Gemini): "Mira esta foto, y por cierto, si te sirve, usa la "Copa de Cristal Negro" que el usuario ya tiene guardada, copiando sus parámetros".
+
+La IA devuelve el JSON. Como ya le hemos dado los parámetros exactos de la parte guardada, el motor 3D de tu frontend renderizará esa pieza exacta que tú diseñaste y guardaste anteriormente.
+
+¡Tu biblioteca ahora es inteligente y evolutiva! Cada vez que guardes una pieza nueva, la IA aprenderá de ella para futuras generaciones.

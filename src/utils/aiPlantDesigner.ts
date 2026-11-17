@@ -413,6 +413,19 @@ export function saveCustomElementToApp(el: CustomBotanicalElement): CustomBotani
   return next;
 }
 
+export function deleteCustomElementFromApp(elementId: string, matchName?: string): CustomBotanicalElement[] {
+  const existing = loadSavedCustomElements();
+  const next = existing.filter(
+    (item) => item.id !== elementId && (!matchName || item.name !== matchName)
+  );
+  try {
+    localStorage.setItem(CUSTOM_ELEMENTS_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    // ignore storage quota errors
+  }
+  return next;
+}
+
 export function loadSavedCustomSpecies(): SpeciesPreset[] {
   try {
     const raw = localStorage.getItem(CUSTOM_SPECIES_STORAGE_KEY);
@@ -460,6 +473,75 @@ export function saveCustomSpeciesToApp(preset: SpeciesPreset): SpeciesPreset[] {
     // ignore storage quota errors
   }
   return next;
+}
+
+export type PartModuleType =
+  | 'stem'
+  | 'canopy'
+  | 'surface'
+  | 'hanging'
+  | 'synthesizedTip'
+  | 'basalFoliage';
+
+export interface SavedPartModule {
+  id: string;
+  name: string;
+  partType: PartModuleType;
+  element: CustomBotanicalElement;
+  createdAt: number;
+}
+
+const SAVED_PARTS_KEY = 'arborea_saved_parts_modules_v1';
+
+export function loadSavedPartsModules(): SavedPartModule[] {
+  try {
+    const raw = localStorage.getItem(SAVED_PARTS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveCustomPartModule(
+  partName: string,
+  partType: PartModuleType,
+  element: CustomBotanicalElement
+): SavedPartModule[] {
+  try {
+    const cleanName = partName.trim() || element.name || 'Parte Modular';
+    const existing = loadSavedPartsModules().filter((p) => p.name !== cleanName);
+    const newPart: SavedPartModule = {
+      id: `part_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      name: cleanName,
+      partType,
+      element: {
+        ...element,
+        name: cleanName,
+        aiNewPartsReport:
+          element.aiNewPartsReport ||
+          'Parte modular guardada en la biblioteca para reutilización con IA.',
+      },
+      createdAt: Date.now(),
+    };
+    const next = [newPart, ...existing].slice(0, 100);
+    localStorage.setItem(SAVED_PARTS_KEY, JSON.stringify(next));
+    return next;
+  } catch (e) {
+    console.error('Error guardando la parte modular en localStorage:', e);
+    return loadSavedPartsModules();
+  }
+}
+
+export function deleteSavedPartModule(partId: string): SavedPartModule[] {
+  try {
+    const next = loadSavedPartsModules().filter((p) => p.id !== partId);
+    localStorage.setItem(SAVED_PARTS_KEY, JSON.stringify(next));
+    return next;
+  } catch {
+    return loadSavedPartsModules();
+  }
 }
 
 function rgbToHex(r: number, g: number, b: number): string {
@@ -1088,6 +1170,7 @@ export async function designPlantFromImageWithAI(
   aiConfigOverride?: AiProviderConfig
 ): Promise<AiPlantDesignResult> {
   const aiConfig = aiConfigOverride || loadAiProviderConfig();
+  const savedCustomParts = loadSavedPartsModules();
 
   const response = await fetch('/api/ai/design-plant', {
     method: 'POST',
@@ -1098,6 +1181,7 @@ export async function designPlantFromImageWithAI(
       userNotes: userNotes.trim(),
       visionFeatures: prepared.visionFeatures,
       aiConfig,
+      customParts: savedCustomParts,
     }),
   });
 
@@ -1157,6 +1241,23 @@ export async function designPlantFromImageWithAI(
 
   saveCustomElementToApp(createdElement);
   saveCustomSpeciesToApp(createdPreset);
+
+  const hasNovelSynthesis =
+    createdElement.canopyElement === 'procedural_lathe_head' ||
+    createdElement.canopyElement === 'custom_spline_leaf_crown' ||
+    (createdElement.synthesizedHeadTopology && createdElement.synthesizedHeadTopology !== 'none') ||
+    (Array.isArray(createdElement.petalContourProfile) &&
+      createdElement.petalContourProfile.length >= 4) ||
+    (Array.isArray(createdElement.latheProfileRadii) &&
+      createdElement.latheProfileRadii.length >= 4);
+
+  if (hasNovelSynthesis) {
+    saveCustomPartModule(
+      createdElement.name || res.identifiedName || 'Parte Sintetizada IA',
+      'canopy',
+      createdElement
+    );
+  }
 
   if (!SPECIES_CATALOG.some((s) => s.id === createdPreset.id)) {
     SPECIES_CATALOG.unshift(createdPreset);

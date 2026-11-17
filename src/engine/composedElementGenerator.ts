@@ -109,6 +109,37 @@ function resolveMossPalette(
   };
 }
 
+function colorizeGeometryByHeight(
+  geo: THREE.BufferGeometry,
+  colorBottomHex: string | THREE.Color,
+  colorTopHex: string | THREE.Color,
+  minY?: number,
+  maxY?: number
+): void {
+  const pos = geo.attributes.position as THREE.BufferAttribute;
+  if (!pos) return;
+  let y0 = minY;
+  let y1 = maxY;
+  if (y0 === undefined || y1 === undefined) {
+    geo.computeBoundingBox();
+    y0 = geo.boundingBox ? geo.boundingBox.min.y : 0;
+    y1 = geo.boundingBox ? geo.boundingBox.max.y : 1;
+  }
+  const rangeY = Math.max(0.0001, y1 - y0);
+  const cBot = new THREE.Color(colorBottomHex);
+  const cTop = new THREE.Color(colorTopHex);
+  const tmp = new THREE.Color();
+  const colors = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    const t = THREE.MathUtils.clamp((pos.getY(i) - y0) / rangeY, 0, 1);
+    tmp.copy(cBot).lerp(cTop, t);
+    colors[i * 3] = tmp.r;
+    colors[i * 3 + 1] = tmp.g;
+    colors[i * 3 + 2] = tmp.b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+}
+
 
 
 /**
@@ -1880,6 +1911,235 @@ function buildSculptedProceduralLatheHead(
 }
 
 /**
+ * Builds a single 3D Double-Surfaced Spline-Contoured Leaf / Petal / Bract blade
+ * directly from the AI's `petalContourProfile` width control array plus 3D cupping,
+ * helical twist, marginal waves, and midrib keel thickness.
+ */
+function buildCustomSplineContourBlade(
+  contourRadii: number[],
+  bladeLen: number,
+  maxHalfWidth: number,
+  cupping: number,
+  twistRad: number,
+  marginWave: number,
+  longArch: number,
+  colBase: string,
+  colTip: string,
+  colAccent: string,
+  segsU: number,
+  segsV: number
+): THREE.BufferGeometry {
+  const safePts =
+    Array.isArray(contourRadii) && contourRadii.length >= 4
+      ? contourRadii
+      : [0.12, 0.58, 0.96, 0.78, 0.92, 0.44, 0.08];
+
+  const spline2D = new THREE.SplineCurve(
+    safePts.map((w, idx) => {
+      const t = idx / (safePts.length - 1);
+      const clampedW = THREE.MathUtils.clamp(Number(w) || 0.4, 0.02, 1.45);
+      return new THREE.Vector2(t, clampedW);
+    })
+  );
+
+  const cols = segsV + 1;
+  const rows = segsU + 1;
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  const colors: number[] = [];
+  const indices: number[] = [];
+
+  const cBase = new THREE.Color(colBase);
+  const cTip = new THREE.Color(colTip);
+  const cAcc = new THREE.Color(colAccent);
+  const tmpCol = new THREE.Color();
+
+  // Upper surface (layer 0) & Lower cambered surface (layer 1) so the blade has physical 3D thickness
+  for (let side = 0; side < 2; side++) {
+    const signSide = side === 0 ? 1 : -1;
+    for (let r = 0; r < rows; r++) {
+      const u = r / segsU;
+      const profileW = THREE.MathUtils.clamp(spline2D.getPointAt(u).y, 0.015, 1.45);
+      const yBase = u * bladeLen;
+      const zArch = Math.sin(u * Math.PI * 0.85) * longArch * bladeLen * 0.28 - u * u * longArch * bladeLen * 0.16;
+      const halfW = maxHalfWidth * profileW;
+      const twistHere = u * twistRad;
+      const cosT = Math.cos(twistHere);
+      const sinT = Math.sin(twistHere);
+
+      for (let c = 0; c < cols; c++) {
+        const vNorm = (c / segsV) * 2 - 1; // -1 to +1
+        const absV = Math.abs(vNorm);
+        const edgeFade = Math.max(0, 1 - absV * absV);
+
+        const xLocal = vNorm * halfW;
+        // Transverse cupping + marginal wave
+        const cupZ = cupping * (absV * absV) * maxHalfWidth * 0.55 * Math.sin(u * Math.PI * 0.92 + 0.15);
+        const waveZ =
+          marginWave *
+          Math.sin(u * Math.PI * 5.0 + vNorm * 2.2) *
+          Math.pow(absV, 1.35) *
+          maxHalfWidth *
+          0.45;
+        // Midrib keel ridge + thickness taper to sharp edge
+        const keelHalfThick =
+          maxHalfWidth * (0.045 * (1 - u * 0.6) * edgeFade + 0.018 * (1 - absV));
+        const zLocal = zArch + cupZ + waveZ + signSide * keelHalfThick;
+
+        // Apply axial helical twist around Y
+        const rx = xLocal * cosT - zLocal * sinT;
+        const rz = xLocal * sinT + zLocal * cosT;
+
+        positions.push(rx, yBase, rz);
+        uvs.push(c / segsV, u);
+
+        // Rich gradient: base -> main/tip -> accented margins & apex
+        tmpCol.copy(cBase).lerp(cTip, Math.pow(u, 0.85));
+        if (absV > 0.55 || u > 0.78) {
+          tmpCol.lerp(cAcc, Math.min(0.65, (absV - 0.55) * 0.9 + Math.max(0, u - 0.78) * 1.4));
+        }
+        if (side === 1) {
+          tmpCol.multiplyScalar(0.84);
+        }
+        colors.push(tmpCol.r, tmpCol.g, tmpCol.b);
+      }
+    }
+  }
+
+  const sideVertCount = rows * cols;
+  for (let r = 0; r < segsU; r++) {
+    for (let c = 0; c < segsV; c++) {
+      const a0 = r * cols + c;
+      const b0 = a0 + 1;
+      const d0 = (r + 1) * cols + c;
+      const c0 = d0 + 1;
+      indices.push(a0, d0, b0, b0, d0, c0);
+
+      const a1 = sideVertCount + a0;
+      const b1 = sideVertCount + b0;
+      const d1 = sideVertCount + d0;
+      const c1 = sideVertCount + c0;
+      indices.push(a1, b1, d1, b1, c1, d1);
+    }
+  }
+
+  // Stitch left & right perimeter seams
+  for (let r = 0; r < segsU; r++) {
+    const uL0 = r * cols;
+    const uL1 = (r + 1) * cols;
+    const lL0 = sideVertCount + uL0;
+    const lL1 = sideVertCount + uL1;
+    indices.push(uL0, lL0, uL1, lL0, lL1, uL1);
+
+    const uR0 = r * cols + segsV;
+    const uR1 = (r + 1) * cols + segsV;
+    const lR0 = sideVertCount + uR0;
+    const lR1 = sideVertCount + uR1;
+    indices.push(uR0, uR1, lR0, lR0, uR1, lR1);
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return ensureStandardAttributes(geo);
+}
+
+/**
+ * Builds a complete Multi-Whorl Corona / Rosette of 3D Spline-Contoured Blades or Petals
+ * ("custom_spline_leaf_crown" / "spline_petal_corona").
+ */
+function buildSculptedSplineLeafCrown(
+  el: CustomBotanicalElement,
+  scale: number,
+  colStem: string,
+  colMain: string,
+  colTip: string,
+  colFlower: string,
+  colAccent: string,
+  densityMult: number,
+  rand: () => number
+): THREE.BufferGeometry[] {
+  const parts: THREE.BufferGeometry[] = [];
+  const contour =
+    Array.isArray(el.petalContourProfile) && el.petalContourProfile.length >= 4
+      ? el.petalContourProfile
+      : [0.14, 0.62, 0.98, 0.72, 0.94, 0.42, 0.08];
+  const cupping = THREE.MathUtils.clamp(el.petalCupping ?? 0.38, -0.65, 0.95);
+  const twistRad = THREE.MathUtils.degToRad(THREE.MathUtils.clamp(el.petalTwistDeg ?? 14, 0, 95));
+  const marginWave = THREE.MathUtils.clamp(el.petalMarginWave ?? 0.16, 0, 0.5);
+  const openness = THREE.MathUtils.clamp(el.petalOpenness ?? 0.52, 0.1, 1.0);
+  const whorls = Math.max(1, Math.min(4, Math.round(el.padLayers ? el.padLayers * 0.45 : 2)));
+  const petalsPerWhorl = Math.max(4, Math.min(12, el.lobeCount || 6));
+
+  // Welded central receptacle / calyx base
+  const recepR = Math.max(0.06, scale * 0.16);
+  const recep = new THREE.SphereGeometry(recepR, 10, 8);
+  recep.scale(1.0, 0.68, 1.0);
+  colorizeGeometryByHeight(recep, colStem, colMain, -recepR, recepR);
+  parts.push(ensureStandardAttributes(recep));
+
+  const segsU = Math.max(7, Math.round(11 * Math.min(1.3, densityMult)));
+  const segsV = Math.max(5, Math.round(7 * Math.min(1.3, densityMult)));
+
+  for (let w = 0; w < whorls; w++) {
+    const wFrac = whorls === 1 ? 0.5 : w / (whorls - 1);
+    const countHere = Math.max(4, petalsPerWhorl - w);
+    const bladeLen = scale * (0.95 - wFrac * 0.25);
+    const maxHalfW = bladeLen * (0.28 + (1 - wFrac) * 0.08);
+    const tiltAngle = THREE.MathUtils.lerp(
+      0.38 + openness * 0.85,
+      0.18 + openness * 0.35,
+      wFrac
+    );
+
+    for (let i = 0; i < countHere; i++) {
+      const yaw = (i / countHere) * Math.PI * 2 + w * 0.52 + (rand() - 0.5) * 0.12;
+      const blade = buildCustomSplineContourBlade(
+        contour,
+        bladeLen * (0.92 + rand() * 0.16),
+        maxHalfW,
+        cupping,
+        twistRad * (i % 2 === 0 ? 1 : -1),
+        marginWave,
+        openness * 0.65,
+        w === 0 ? colMain : colFlower,
+        colTip,
+        colAccent,
+        segsU,
+        segsV
+      );
+      const m = new THREE.Matrix4()
+        .makeRotationY(yaw)
+        .multiply(new THREE.Matrix4().makeRotationX(tiltAngle))
+        .multiply(new THREE.Matrix4().makeTranslation(0, recepR * 0.25, recepR * 0.45));
+      blade.applyMatrix4(m);
+      parts.push(blade);
+    }
+  }
+
+  // Optional central synthesized tip primitive / anther spire
+  if (el.synthesizedTipPrimitive && el.synthesizedTipPrimitive !== 'none') {
+    const tipParts = buildSynthesizedTipPrimitive(
+      el.synthesizedTipPrimitive,
+      recepR * 0.65 * (el.tipBubbleScale ?? 1.0),
+      new THREE.Vector3(0, recepR * 1.15, 0),
+      new THREE.Vector3(0, 1, 0),
+      colFlower,
+      colTip,
+      colAccent,
+      densityMult,
+      rand
+    );
+    parts.push(...tipParts);
+  }
+
+  return parts;
+}
+
+/**
  * Builds AI-Synthesized Basal Foliage welded around the stem base at y = 0:
  * - 'long_grass_blades': Long arching V-channeled green grass/allium blades + stem-clasping leaves (matches image_290829a3.png!)
  * - 'broad_rosette_leaves': Broad contoured rosette leaves around the base
@@ -3493,6 +3753,23 @@ export function buildCustomElementFoliageCluster(
     el.synthesizedHeadTopology === 'revolved_lathe_chalice'
   ) {
     return buildSculptedProceduralLatheHead(
+      el,
+      scale,
+      '#2f6e24',
+      colorMain,
+      colorTip,
+      colorFlower,
+      '#fde68a',
+      densityMult,
+      rand
+    );
+  }
+
+  if (
+    el.canopyElement === 'custom_spline_leaf_crown' ||
+    el.synthesizedHeadTopology === 'spline_petal_corona'
+  ) {
+    return buildSculptedSplineLeafCrown(
       el,
       scale,
       '#2f6e24',
@@ -5974,6 +6251,35 @@ export function generateComposedBotanicalGeometry(
       latheParts.forEach((lp) => {
         lp.applyMatrix4(mat);
         detailGeometries.push(lp);
+      });
+    });
+  } else if (
+    !isClawOrCrownRosette &&
+    (el.canopyElement === 'custom_spline_leaf_crown' ||
+      el.synthesizedHeadTopology === 'spline_petal_corona')
+  ) {
+    canopyAttachmentNodes.forEach((node) => {
+      const splineScale = Math.max(0.42, node.radius * (node.isPrimaryApex ? 1.16 : 0.82));
+      const splineParts = buildSculptedSplineLeafCrown(
+        el,
+        splineScale,
+        colTrunk,
+        colLeafMain,
+        colLeafTip,
+        colFlower,
+        colAccent,
+        densityMult,
+        rand
+      );
+      const upDir = new THREE.Vector3(0, 1, 0);
+      const aimDir = node.dir.clone().lerp(upDir, 0.58).normalize();
+      const qAlign = new THREE.Quaternion().setFromUnitVectors(upDir, aimDir);
+      const mat = new THREE.Matrix4().makeRotationFromQuaternion(qAlign);
+      mat.setPosition(node.pos.x, node.pos.y, node.pos.z);
+
+      splineParts.forEach((sp) => {
+        sp.applyMatrix4(mat);
+        detailGeometries.push(sp);
       });
     });
   } else if (!isClawOrCrownRosette && (el.canopyElement === 'custom_fungi_cap' || isFungiOrUmbelColony)) {

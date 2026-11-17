@@ -56,7 +56,8 @@ export type CanopyElementType =
   | 'passionflower_filament_corona'
   | 'heliconia_bract_candelabra'
   | 'dehiscent_seed_pods_coronas'
-  | 'carnivorous_nepenthes_pitchers';
+  | 'carnivorous_nepenthes_pitchers'
+  | 'custom_spline_leaf_crown';
 
 export type SurfaceElementType =
   | 'braided_vines'
@@ -88,7 +89,8 @@ export type SynthesizedHeadTopology =
   | 'revolved_lathe_chalice'
   | 'layered_petal_starburst'
   | 'hanging_bell_raceme'
-  | 'crystal_spire_cluster';
+  | 'crystal_spire_cluster'
+  | 'spline_petal_corona';
 
 export type SynthesizedTipPrimitive =
   | 'iridescent_bubble'
@@ -156,6 +158,10 @@ export interface CustomBotanicalElement {
   basalLeafLength?: number;
   iridescentShift?: number;
   latheProfileRadii?: number[];
+  petalContourProfile?: number[];
+  petalCupping?: number;
+  petalTwistDeg?: number;
+  petalMarginWave?: number;
   aiNewPartsReport?: string;
 }
 
