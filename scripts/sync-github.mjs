@@ -164,11 +164,30 @@ async function main() {
     runGit(gitExe, ['push', '-u', 'origin', branch]);
     console.log('\n✅ ¡Sincronizado con GitHub correctamente!');
   } catch {
-    console.log('\n⚠ No se pudo hacer push directo (quizá el remoto tiene commits previos).');
-    console.log(`Si el repo de GitHub ya existía con archivos previos, ejecuta primero:`);
-    console.log(`   "${gitExe}" pull origin ${branch} --allow-unrelated-histories`);
-    console.log(`Y luego vuelve a ejecutar: node scripts/sync-github.mjs`);
-    process.exit(1);
+    console.log('\n↻ El repo en GitHub tenía historial previo; integrando automáticamente (conservando tus cambios locales)...');
+    try {
+      try {
+        runGit(gitExe, [
+          'pull',
+          'origin',
+          branch,
+          '--allow-unrelated-histories',
+          '-X',
+          'ours',
+          '--no-edit',
+        ]);
+      } catch {
+        // Si hubiera algún archivo en conflicto (add/add), conservar nuestra versión local verificada
+        runGit(gitExe, ['checkout', '--ours', '.']);
+        runGit(gitExe, ['add', '-A']);
+        runGit(gitExe, ['commit', '--no-edit']);
+      }
+      runGit(gitExe, ['push', '-u', 'origin', branch]);
+      console.log('\n✅ ¡Historial integrado y cambios subidos a GitHub correctamente!');
+    } catch (pushErr) {
+      console.error('\n❌ No se pudo completar la subida automática:', pushErr?.message || pushErr);
+      process.exit(1);
+    }
   }
 }
 
