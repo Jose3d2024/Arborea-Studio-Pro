@@ -60,6 +60,11 @@ const TONAL_MODE_INDEX: Record<TonalShaderMode, number> = {
   cosmic_speckled_dust: 19,
   iridescent_dragon_scales: 20,
   chlorophyll_variegated: 21,
+  caladium_neon_vein: 22,
+  dalmatian_ink_splatter: 23,
+  rainbow_umbel_spectrum: 24,
+  obsidian_gold_ember_rim: 25,
+  nebula_biolum_crystal: 26,
 };
 
 function createPRNG(seed: number): () => number {
@@ -735,6 +740,81 @@ function attachBotanicalShader(
           reflectedLight.directDiffuse = mix(reflectedLight.directDiffuse, varCol * lScale, combinedVar * 0.88);
           reflectedLight.indirectDiffuse = mix(reflectedLight.indirectDiffuse, varCol * 0.42, combinedVar * 0.7);
           totalEmissiveRadiance += uAccentColor * varMaskB * fresnel * uEmissiveIntensity * 0.35;
+        }
+        // Mode 22: Caladium Neon Vein & Contrasting Rim (Obsidian+Crimson or Ruby+Emerald+Freckles)
+        else if (uTonalMode == 22) {
+          vec3 cp = vBotanyWorldPos * (3.8 * max(0.3, uPatternScale));
+          float angV = atan(cp.z, cp.x) * 4.5 + sin(cp.y * 2.8) * 0.8;
+          float mainRib = pow(abs(sin(angV + cp.y * 1.6)), 10.0);
+          vec3 netCell = botanyVoronoiCell(cp * 2.2);
+          float fineVein = (1.0 - smoothstep(0.015, 0.08, netCell.y)) * 0.65;
+          float veinMask = clamp(mainRib * 0.85 + fineVein, 0.0, 1.0) * clamp(0.5 + uPatternContrast * 0.5, 0.25, 1.0);
+          float freck = (1.0 - smoothstep(0.14, 0.22, botanyVoronoiCell(cp * 3.1).x)) * step(0.55, netCell.z);
+          float rimBand = pow(fresnel, 1.35);
+          vec3 leafCol = mix(uMainColor, uFlowerColor, veinMask);
+          leafCol = mix(leafCol, uAccentColor, freck * 0.75 * uPatternContrast);
+          leafCol = mix(leafCol, uTipColor, rimBand * 0.88);
+          float lScale = 0.46 + length(reflectedLight.directDiffuse) * 0.78;
+          reflectedLight.directDiffuse = mix(reflectedLight.directDiffuse, leafCol * lScale, 0.85);
+          reflectedLight.indirectDiffuse = mix(reflectedLight.indirectDiffuse, leafCol * 0.4, 0.65);
+          totalEmissiveRadiance += uFlowerColor * veinMask * uEmissiveIntensity * 0.75;
+        }
+        // Mode 23: Dalmatian Ink Splatter (Bold Organic Blotches over Pastel Flesh)
+        else if (uTonalMode == 23) {
+          vec3 dp = vBotanyWorldPos * (4.6 * max(0.3, uPatternScale));
+          dp += 0.35 * sin(dp.yzx * 2.4) + 0.18 * cos(dp.zxy * 4.8);
+          vec3 dCell1 = botanyVoronoiCell(dp);
+          vec3 dCell2 = botanyVoronoiCell(dp * 2.1 + vec3(3.7, 1.4, 2.9));
+          float blotch1 = (1.0 - smoothstep(0.18, 0.28, dCell1.x)) * step(0.38, dCell1.z);
+          float blotch2 = (1.0 - smoothstep(0.12, 0.20, dCell2.x)) * step(0.50, dCell2.z);
+          float inkMask = clamp(max(blotch1, blotch2), 0.0, 1.0) * clamp(0.55 + uPatternContrast * 0.45, 0.3, 1.0);
+          vec3 baseBody = mix(uMainColor, uTipColor, smoothstep(0.2, 0.9, hNorm) * 0.55 + fresnel * 0.3);
+          vec3 finalCol = mix(baseBody, uAccentColor, inkMask);
+          float lScale = 0.48 + length(reflectedLight.directDiffuse) * 0.75;
+          reflectedLight.directDiffuse = mix(reflectedLight.directDiffuse, finalCol * lScale, 0.86);
+          reflectedLight.indirectDiffuse = mix(reflectedLight.indirectDiffuse, finalCol * 0.42, 0.68);
+        }
+        // Mode 24: Rainbow Umbel / Prismatic 4-Color Botanical Spectrum
+        else if (uTonalMode == 24) {
+          float angP = (atan(vBotanyWorldPos.z, vBotanyWorldPos.x) / 6.2831853) + 0.5;
+          float radP = clamp(length(vBotanyWorldPos.xz) / max(0.4, uTreeHeight * 0.38), 0.0, 1.0);
+          float phase = fract(hNorm * 0.72 + radP * 0.48 + angP * 0.18 * uPatternScale);
+          vec3 specCol = phase < 0.33
+            ? mix(uMainColor, uTipColor, phase * 3.0)
+            : phase < 0.66
+            ? mix(uTipColor, uFlowerColor, (phase - 0.33) * 3.0)
+            : mix(uFlowerColor, uAccentColor, (phase - 0.66) * 3.0);
+          float lScale = 0.5 + length(reflectedLight.directDiffuse) * 0.78;
+          reflectedLight.directDiffuse = mix(reflectedLight.directDiffuse, specCol * lScale, 0.85);
+          reflectedLight.indirectDiffuse = mix(reflectedLight.indirectDiffuse, specCol * 0.44, 0.65);
+          totalEmissiveRadiance += specCol * (0.12 + fresnel * 0.55) * max(0.25, uEmissiveIntensity);
+        }
+        // Mode 25: Volcanic Obsidian Body & Molten Gold Serrated Rim
+        else if (uTonalMode == 25) {
+          vec3 op = vBotanyWorldPos * (4.2 * max(0.3, uPatternScale));
+          float rib = pow(abs(sin(atan(op.z, op.x) * 8.0 + botanyNoise3(op) * 2.4)), 4.0);
+          float rimMask = clamp(pow(fresnel, 1.15) * 1.15 + smoothstep(0.65, 0.96, hNorm) * 0.45 * uPatternContrast, 0.0, 1.0);
+          vec3 darkBody = mix(uMainColor, uTrunkColor, rib * 0.45) * 0.42;
+          vec3 goldRim = mix(uTipColor, uAccentColor, fresnel);
+          vec3 obsCol = mix(darkBody, goldRim, smoothstep(0.32, 0.78, rimMask));
+          float lScale = 0.44 + length(reflectedLight.directDiffuse) * 0.82;
+          reflectedLight.directDiffuse = mix(reflectedLight.directDiffuse, obsCol * lScale, 0.88);
+          reflectedLight.indirectDiffuse = mix(reflectedLight.indirectDiffuse, obsCol * 0.35, 0.65);
+          totalEmissiveRadiance += goldRim * smoothstep(0.45, 0.88, rimMask) * max(0.3, uEmissiveIntensity * 1.25);
+        }
+        // Mode 26: Bioluminescent Nebula Crystal (Cosmic Indigo Shell + Fiery Internal Filaments)
+        else if (uTonalMode == 26) {
+          vec3 np = vBotanyWorldPos * (3.6 * max(0.3, uPatternScale));
+          np += 0.42 * sin(np.yzx * 2.1 + uTime * 0.35);
+          vec3 nCell = botanyVoronoiCell(np);
+          float filament = 1.0 - smoothstep(0.02, 0.14, nCell.y);
+          float coreGlow = pow(ndotv, 1.4) * (0.5 + 0.5 * botanyNoise3(np * 1.8));
+          float pulse = 0.8 + 0.2 * sin(uTime * 2.2 - vBotanyWorldPos.y * 2.5);
+          vec3 shellCol = mix(uMainColor, uTipColor, fresnel * 0.75);
+          vec3 nebCol = mix(uFlowerColor, uAccentColor, filament);
+          float lScale = 0.4 + length(reflectedLight.directDiffuse) * 0.72;
+          reflectedLight.directDiffuse = mix(reflectedLight.directDiffuse, shellCol * lScale, 0.78);
+          totalEmissiveRadiance += (nebCol * (filament * 0.9 + coreGlow * 0.65) + uTipColor * fresnel * 0.45) * max(0.4, uEmissiveIntensity * 1.35) * pulse;
         }
         `
       );

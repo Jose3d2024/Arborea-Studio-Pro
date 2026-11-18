@@ -33,7 +33,9 @@ export type StemStructureType =
   | 'scifi_tendril_cradle'
   | 'scaled_armored_caudex'
   | 'segmented_siphon_tubes'
-  | 'swollen_ovary_calyx_stem';
+  | 'swollen_ovary_calyx_stem'
+  | 'ebony_fluted_bonsai_arch'
+  | 'caudex_rosette_branch_tree';
 
 export type CanopyElementType =
   | 'cloud_bonsai_pads'
@@ -70,7 +72,12 @@ export type CanopyElementType =
   | 'crater_tentacle_anemone'
   | 'coral_clavaria_fingers'
   | 'spiny_fenestrated_pods'
-  | 'perforated_blossom_urn';
+  | 'perforated_blossom_urn'
+  | 'caladium_heart_leaf_cluster'
+  | 'king_protea_crown'
+  | 'curled_horn_rosette'
+  | 'spiny_crater_dragon_orb'
+  | 'lacy_veil_spiked_mushroom';
 
 export type SurfaceElementType =
   | 'braided_vines'
@@ -246,7 +253,12 @@ export type TonalShaderMode =
   | 'picotee_rimmed_petal'
   | 'cosmic_speckled_dust'
   | 'iridescent_dragon_scales'
-  | 'chlorophyll_variegated';
+  | 'chlorophyll_variegated'
+  | 'caladium_neon_vein'
+  | 'dalmatian_ink_splatter'
+  | 'rainbow_umbel_spectrum'
+  | 'obsidian_gold_ember_rim'
+  | 'nebula_biolum_crystal';
 
 /**
  * Representation Styles inspired by Dr. Andrew Marsh's Tree3D-Web, Florasynth, and Wiskered TreeGen

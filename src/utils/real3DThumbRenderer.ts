@@ -422,6 +422,11 @@ export function renderReal3DPartThumbnail(
       'toothed_venus_jaw_trap',
       'crater_tentacle_anemone',
       'perforated_blossom_urn',
+      'caladium_heart_leaf_cluster',
+      'king_protea_crown',
+      'curled_horn_rosette',
+      'spiny_crater_dragon_orb',
+      'lacy_veil_spiked_mushroom',
       'conical_floral_spike',
       'curled_witchhat_mushroom_cap',
     ].includes(value)

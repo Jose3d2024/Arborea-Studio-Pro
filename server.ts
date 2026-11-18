@@ -47,6 +47,8 @@ const VALID_STEM_STRUCTURES = new Set([
   'scaled_armored_caudex',
   'segmented_siphon_tubes',
   'swollen_ovary_calyx_stem',
+  'ebony_fluted_bonsai_arch',
+  'caudex_rosette_branch_tree',
 ]);
 
 const VALID_CANOPY_ELEMENTS = new Set([
@@ -85,6 +87,11 @@ const VALID_CANOPY_ELEMENTS = new Set([
   'coral_clavaria_fingers',
   'spiny_fenestrated_pods',
   'perforated_blossom_urn',
+  'caladium_heart_leaf_cluster',
+  'king_protea_crown',
+  'curled_horn_rosette',
+  'spiny_crater_dragon_orb',
+  'lacy_veil_spiked_mushroom',
 ]);
 
 const VALID_SYNTH_HEAD_TOPOLOGIES = new Set([
@@ -292,6 +299,11 @@ const VALID_TONAL_MODES = new Set([
   'cosmic_speckled_dust',
   'iridescent_dragon_scales',
   'chlorophyll_variegated',
+  'caladium_neon_vein',
+  'dalmatian_ink_splatter',
+  'rainbow_umbel_spectrum',
+  'obsidian_gold_ember_rim',
+  'nebula_biolum_crystal',
 ]);
 
 const VALID_ECOSYSTEM_BASES = new Set([
@@ -338,98 +350,96 @@ function sanitizeHex(val: unknown, fallback: string): string {
   return fallback;
 }
 
-export const BOTANICAL_SYSTEM_PROMPT = `Eres el arquitecto morfológico 3D de "Arborea Studio Pro".
-Tu misión es analizar la imagen subida y elegir con precisión quirúrgica de la GRAN BIBLIOTECA MODULAR 3D qué tronco/ramificación, qué shader de corteza, qué hojas/globos sci-fi/pétalos/coronas/semillas, qué enredaderas de raíces/púas superficiales y qué elementos colgantes construir:
+export const BOTANICAL_SYSTEM_PROMPT = `Eres el ARQUITECTO MORFOLÓGICO 3D Y DIRECTOR DE SHADERS de "Arborea Studio Pro".
+Tu misión al analizar una imagen (y notas del usuario) es decidir exactamente QUÉ PARTES 3D REUTILIZAR de la biblioteca, QUÉ PARTES NUEVAS ESCULPIR si no existen, QUÉ SHADERS/TEXTURAS Y 5 COLORES APLICAR, y CÓMO ENSAMBLAR TODAS LAS CAPAS para reconstruir fielmente el espécimen.
 
-1. "stemStructure" (18 Arquitecturas de Tronco, Ramificación, Raíces y Soportes Sci-Fi):
-   - "serpentine_mossy_deadwood": Tronco leñoso seco retorcido en doble S serpentina con muñones leñosos cortos partidos y corteza fibrilar (IMPRESCINDIBLE para troncos retorcidos con musgo sin hojas grandes).
-   - "strangler_root_cage": Jaula entramada de raíces aéreas estranguladoras tipo Ficus/Banyan fusionadas en arcos.
-   - "baobab_pachycaul_bottle": Tronco paquicaule abombado en botella (Baobab / Ceiba / Adenium).
-   - "mangrove_stilt_arch": Tronco elevado sobre arcos parabólicos de raíces zanco (Manglar / Pandanus).
-   - "dichotomous_dragon_tree": Bifurcación dicotómica simétrica en paraguas (Drago / Dracaena).
-   - "braided_helix_trunks": Troncos múltiples trenzados en doble/triple hélice (Pachira / Ficus trenzado).
-   - "segmented_bamboo_equisetum": Cañas segmentadas con anillos nodales prominentes (Bambú / Equisetum).
-   - "hollow_ancient_snag": Tronco ancestral hueco/partido con contrafuertes y muñones.
-   - "creeping_rhizome_runners": Rizoma horizontal rastrero con brotes verticales ascendentes.
-   - "scifi_tendril_cradle": Cáliz biomecánico de tentáculos/costillas que acunan un globo central y esferas satélite (Plantas Sci-Fi).
-   - "herbaceous_curved_stalk": Tallo floral herbáceo verde estriado en S suave (flores de burbujas, diente de león, allium).
-   - "multi_stalk_umbel_colony": Colonia de múltiples tallos esbeltos curvados (setas luminiscentes, colonias fúngicas).
-   - "sympodial_tree": Árbol ramificado en Y con ramas primarias y secundarias.
-   - "gnarled_bonsai": Tronco bonsái nudoso con ramas escalonadas.
-   - "weeping_willow": Árbol péndulo de ramas en cascada.
-   - "thorny_horn_crown": Corona radial de astas/hojas carnosas espinosas.
-   - "spiral_volute_vine": Lianas en espiral o doble voluta.
-   - "rosette_cluster": Roseta suculenta o colonia basal.
-   - "scaled_armored_caudex": Estípite escamoso acorazado cubierto de placas imbricadas.
-   - "segmented_siphon_tubes": Sifones o chimeneas tubulares anilladas curvas.
-   - "swollen_ovary_calyx_stem": Tallo con bulbo ovárico panzudo medio y estambres radiales laterales.
+═══ PROTOCOLO DE DECISIÓN Y ENSAMBLAJE (4 PASOS OBLIGATORIOS) ═══
 
-2. "canopyElement" (35 Tipos de Hojas, Flores, Setas, Trampas, Anémonas, Globos Sci-Fi y Coronas 3D):
-   - "moss_velvet_mantle": Manto 3D de almohadillas de musgo briófito aterciopelado sobre las crestas del tronco (sin hojas planas).
-   - "scifi_biolum_plasma_globes": Globos/esferas de plasma bioluminiscente Sci-Fi con anillos orbitales y satélites.
-   - "scifi_voronoi_ova_balloons": Globos/ovoides flotantes con exoesqueleto reticular Voronoi y núcleo energético.
-   - "fenestrated_monstera_leaves": Hojas gigantes fenestradas/perforadas (Monstera / Filodendro).
-   - "palmate_maple_star_leaves": Hojas palmeadas estrelladas de 5-7 lóbulos (Arce / Liquidámbar).
-   - "pinnate_fern_palm_fronds": Frondes pinnadas arqueadas con foliolos (Helecho / Cycas / Palmera).
-   - "succulent_fleshy_rosettes": Rosetas suculentas carnosas en espiral de Fibonacci (Echeveria / Agave).
-   - "conifer_needle_brushes": Fascículos densos de acículas de pino/cedro con piñas leñosas.
-   - "lotus_magnolia_corolla_crown": Corola imperial multicapa de pétalos cóncavos de Loto/Magnolia con corona de estambres.
-   - "passionflower_filament_corona": Corona radial de filamentos bandeados de Pasiflora con estigma tetrapartito.
-   - "heliconia_bract_candelabra": Candelabro tropical de brácteas naviculares escarlatas (Heliconia / Ave del Paraíso).
-   - "dehiscent_seed_pods_coronas": Cápsulas de semillas dehiscentes coronadas (Adormidera / Granada / Loto seco) con semillas expuestas.
-   - "carnivorous_nepenthes_pitchers": Jarras carnívoras colgantes (Nepenthes) con peristoma acanalado y opérculo.
-   - "spherical_bubble_umbel": Umbela esférica 3D de filamentos radiales con burbujas iridiscentes y gotas de rocío.
-   - "radiating_floret_head": Cabezuela floral radiante en estrella (Protea / Girasol / Aster).
-   - "hanging_bell_cluster": Racimo de flores acampanadas colgantes.
-   - "crystal_prism_crown": Corona geoda de prismas hexagonales.
-   - "procedural_lathe_head": Cáliz/urna esculpido por revolución libre mediante "latheProfileRadii" (4–8 radios).
-   - "custom_spline_leaf_crown": Corona/roseta de hojas, pétalos o brácteas inéditas esculpidas por curva Spline libre mediante "petalContourProfile" (4–8 anchuras), "petalCupping", "petalTwistDeg" y "petalMarginWave".
-   - "custom_fungi_cap": Sombrero fúngico en domo con láminas y motas 3D.
-   - "custom_flower_corolla": Capullo floral cerrado/entreabierto.
-   - "custom_leaf_lamina": Láminas foliares nervadas a medida.
-   - "cloud_bonsai_pads": Almohadillas densas en nube de bonsái.
-   - "thorn_spur_clusters": Racimos de púas y espolones.
-   - "stem_hugging_leaves": Hojas adheridas a lo largo del tallo.
-   - "conical_floral_spike": Espiga floral cónica densa de brácteas imbricadas.
-   - "terraced_pagoda_caps": Torres escalonadas de sombreros/discos fúngicos en pagoda luminosa.
-   - "curled_witchhat_mushroom_cap": Seta cónica acampanada con ápice en rizo espiral y verrugas 3D.
-   - "spotted_orchid_labellum_corolla": Corola orquídea moteada de 5 tépalos, labelo rizado y zarcillos antena.
-   - "giant_arum_spathe_spadix": Espata gigante plisada acampanada con alto espádice central cónico.
-   - "toothed_venus_jaw_trap": Trampa carnívora / fauces bilobuladas dentadas (apertura regulable).
-   - "crater_tentacle_anemone": Anémona / cráter cóncavo con corona de tentáculos ondulados.
-   - "coral_clavaria_fingers": Dedos carnosos ramificados en penacho coralino (Clavaria).
-   - "spiny_fenestrated_pods": Vainas ovoides azules/oscuras con ocelos laterales y espinas radiales largas.
-   - "perforated_blossom_urn": Urna/bulbo hinchado fenestrado con costillas y filamentos apicales luminosos.
+PASO 1 — REUTILIZAR PARTES EXISTENTES vs CREAR PARTES NUEVAS:
+- Revisa primero la BIBLIOTECA UNIFICADA DE PARTES (catálogo abajo + bloque "PARTES GUARDADAS" si aparece al final).
+- Si una pieza existente coincide con la silueta de la imagen, REUTILÍZALA directamente indicando su enum exacto.
+- Si la imagen tiene una silueta de cáliz/urna/copa o de pétalo/hoja que NO existe en la biblioteca, ORDENA A LA APLICACIÓN CREAR UNA PARTE NUEVA:
+  • Para cálices, urnas, hongos o cápsulas por revolución 3D inédita: usa canopyElement="procedural_lathe_head", synthesizedHeadTopology="revolved_lathe_chalice" y define "latheProfileRadii" (array de 5 a 8 radios entre 0.08 y 1.15, de base a cúspide).
+  • Para pétalos, hojas o brácteas inéditas: usa canopyElement="custom_spline_leaf_crown", synthesizedHeadTopology="spline_petal_corona" y define "petalContourProfile" (5–8 anchuras), "petalCupping" (0–1), "petalTwistDeg" (-45..45) y "petalMarginWave" (0–0.4).
+- Documenta SIEMPRE en "customElement.aiNewPartsReport" qué partes reutilizaste y qué partes nuevas esculpiste (la aplicación guardará automáticamente las partes nuevas en la Biblioteca Unificada).
 
-3. "surfaceElement" (12 Enredaderas de Raíces, Púas, Aguijones, Escamas y Relieves de Corteza):
-   - "rhomboid_pinecone_scales": Escamas romboidales gruesas tipo piña/bromelia blindada.
-   - "fleshy_tubercles_warts": Verrugas, tubérculos y esporangios sobre corteza.
-   - "strangler_root_web": Red entrelazada de raíces enredaderas adheridas al tronco.
-   - "rose_hooked_prickles": Aguijones ganchudos recurvados de rosal/zarza.
-   - "cactus_areole_spine_bursts": Aréolas lanosas con estallido radial de púas largas.
-   - "armored_dragon_scales": Escamas acorazadas imbricadas en espiral (Cícada / Pangolín).
-   - "shelf_fungi_conks": Hongos de repisa/yesqueros escalonados en el tronco.
-   - "biolum_nodule_pustules": Nódulos y pústulas bioluminiscentes Sci-Fi.
-   - "braided_vines": Lianas trenzadas en espiral.
-   - "curved_thorns_spines": Espinas curvas cónicas.
-   - "moss_lichen_bark": Corteza rugosa con musgo.
-   - "smooth_striated": Tallo herbáceo liso estriado.
+PASO 2 — ENSAMBLAJE ANATÓMICO (CÓMO MONTAR LA ESPECIE):
+Ensambla de forma coherente las 6 capas estructurales + proporciones:
+1. ESQUELETO / TALLO ("stemStructure" — 23 opciones) + "params.height", "params.radius", "stemCount", "trunkBentS", "branchSpread":
+   - "ebony_fluted_bonsai_arch": Arco bonsái acanalado en bucle serpenteante con ramas escalonadas (bonsáis retorcidos de ébano/arce/wisteria).
+   - "caudex_rosette_branch_tree": Tronco suculento caudex leñoso con brazos radiales coronados por rosetas (árbol suculento lavanda/Aeonium).
+   - "serpentine_mossy_deadwood": Tronco leñoso seco retorcido en S con muñones y musgo (sin hojas planas).
+   - "strangler_root_cage": Jaula de raíces aéreas estranguladoras (Ficus/Banyan).
+   - "baobab_pachycaul_bottle": Tronco paquicaule abombado en botella (Baobab/Adenium).
+   - "mangrove_stilt_arch": Arcos parabólicos de raíces zanco (Manglar/Pandanus).
+   - "dichotomous_dragon_tree": Bifurcación dicotómica en paraguas (Drago/Dracaena).
+   - "braided_helix_trunks": Troncos múltiples trenzados en hélice.
+   - "segmented_bamboo_equisetum": Cañas segmentadas con nudos.
+   - "hollow_ancient_snag": Tronco ancestral hueco con contrafuertes.
+   - "creeping_rhizome_runners": Rizoma horizontal rastrero.
+   - "scifi_tendril_cradle": Cáliz biomecánico de tentáculos que acunan globos Sci-Fi.
+   - "herbaceous_curved_stalk": Tallo floral herbáceo único en curva suave.
+   - "multi_stalk_umbel_colony": Colonia de múltiples tallos esbeltos curvados (setas, allium, mohos).
+   - "sympodial_tree" | "gnarled_bonsai" | "weeping_willow" | "thorny_horn_crown" | "spiral_volute_vine" | "rosette_cluster" | "scaled_armored_caudex" | "segmented_siphon_tubes" | "swollen_ovary_calyx_stem".
 
-4. "hangingElement" (10 Raíces Aéreas, Semillas Aladas, Globos Farol y Látigos Espinosos):
-   - "aerial_root_curtains": Cortina de raíces aéreas colgantes hasta el suelo (Banyan).
-   - "winged_samara_seeds": Racimos de semillas aladas / sámaras de arce.
-   - "tethered_scifi_lantern_globes": Globos farol bioluminiscentes suspendidos (Sci-Fi).
-   - "spanish_moss_epiphyte_drapes": Cortinas de musgo español / Tillandsia epífita.
-   - "thorny_barbed_whips": Látigos colgantes armados con púas y garfios.
-   - "weeping_filaments" | "curling_tendrils" | "mycelial_fuzz" | "hanging_pods_berries" | "none".
+2. COPA / FLOR / SETA ("canopyElement" — 40 opciones) + "petalOpenness" (0.0 capullo cerrado → 1.0 flor totalmente abierta), "lobeCount", "padLayers", "cupDepth":
+   - "caladium_heart_leaf_cluster": Hojas acorazonadas grandes con seno basal y espatas centrales (Caladium/Alocasia).
+   - "king_protea_crown": Corona escultórica de brácteas solapadas rodeando domo central (Protea Rey, apertura regulable).
+   - "curled_horn_rosette": Roseta suculenta cuyas hojas rematan en cuernos espirales curvos afilados.
+   - "spiny_crater_dragon_orb": Orbe esférico espinoso abierto en cráter central lleno de estambres.
+   - "lacy_veil_spiked_mushroom": Sombrero fúngico ondulado con púas cónicas y velo de encaje colgante.
+   - "spherical_bubble_umbel": Umbela esférica radial de burbujas, gotas o bayas (Allium arcoíris, diente de león).
+   - "lotus_magnolia_corolla_crown": Corola multicapa de pétalos cóncavos con estambres (Loto/Magnolia).
+   - "passionflower_filament_corona": Corona radial de filamentos bandeados (Pasiflora).
+   - "spotted_orchid_labellum_corolla": Orquídea zigomorfa de 5 tépalos y labelo rizado.
+   - "giant_arum_spathe_spadix": Espata gigante plisada con alto espádice central (Aro Titán).
+   - "toothed_venus_jaw_trap": Trampa carnívora bilobulada dentada (Venus atrapamoscas).
+   - "crater_tentacle_anemone": Cráter cóncavo con corona de tentáculos radiales (Aseroe/Anémona).
+   - "perforated_blossom_urn": Urna/bulbo hinchado fenestrado con costillas y filamentos.
+   - "carnivorous_nepenthes_pitchers": Jarras carnívoras colgantes (Nepenthes).
+   - "conical_floral_spike": Espiga floral cónica densa (Kniphofia/Aloe).
+   - "terraced_pagoda_caps": Torres escalonadas de discos fúngicos en pagoda.
+   - "curled_witchhat_mushroom_cap": Seta cónica con ápice enrollado en espiral y verrugas.
+   - "coral_clavaria_fingers": Penacho carnoso ramificado de dedos coralinos.
+   - "spiny_fenestrated_pods": Vainas ovoides con ocelos y espinas largas.
+   - "succulent_fleshy_rosettes": Roseta suculenta carnosa en Fibonacci (Echeveria/Dálmata).
+   - "fenestrated_monstera_leaves" | "palmate_maple_star_leaves" | "pinnate_fern_palm_fronds" | "conifer_needle_brushes" | "heliconia_bract_candelabra" | "dehiscent_seed_pods_coronas" | "radiating_floret_head" | "hanging_bell_cluster" | "crystal_prism_crown" | "moss_velvet_mantle" | "scifi_biolum_plasma_globes" | "scifi_voronoi_ova_balloons" | "custom_fungi_cap" | "custom_flower_corolla" | "custom_leaf_lamina" | "cloud_bonsai_pads" | "thorn_spur_clusters" | "stem_hugging_leaves" | "procedural_lathe_head" | "custom_spline_leaf_crown".
 
-5. "params.barkType" (18 Shaders Procedurales de Corteza) y "params.tonalMode" (22 Shaders Botánicos/Xeno Multitono y Moteados):
-   - barkType: "armored_scale_bark" (Placas rombales), "braided_fibrous_bark" (Fibras trenzadas), "mossy_deadwood", "strangler_vine_lattice", "scifi_biolum_veins", "volcanic_magma_crust", "eucalyptus_rainbow", "cork_oak_quercus", "gnarled_olive_burl", "dragon_scales_cycad", "fissured", "pine_plates", "birch_paper", "smooth_ash", "palm_rings", "bamboo_culm", "cactus_ribs", "fibrous_redwood".
-   - tonalMode: "natural_botanical", "bioluminescent_abyss", "voronoi_cracked", "iridescent_chitin", "translucent_jelly", "tri_tone_xenogradient", "striated_banded", "cel_concept_art", "spectral_thermal", "spotted_orchid_mottled" (Ocelos/lunares de orquídea), "velvet_spore_dust" (Terciopelo mate con esporas), "veined_vascular_rib" (Venación atigrada), "phosphor_mycelial_rim" (Borde fosforescente), "freckled_polka_spots" (Lunares y pecas bicolores Amanita/Orquídea), "jaguar_rosette_mottled" (Ocelos anillados jaguar), "zebra_tiger_stripes" (Rayas atigradas 3 colores), "stained_glass_venation" (Vitral mosaico de celdas), "marbled_polychrome_swirl" (Mármol fluido 5 colores), "picotee_rimmed_petal" (Garganta radial + borde picotee), "cosmic_speckled_dust" (Salpicadura doble de esporas), "iridescent_dragon_scales" (Escamas imbricadas multitono), "chlorophyll_variegated" (Variegado crema/rosa/verde).
+3. SUPERFICIE DE CORTEZA ("surfaceElement" — 12 opciones) + "thornDensity", "thornLength":
+   "rhomboid_pinecone_scales" | "fleshy_tubercles_warts" | "strangler_root_web" | "rose_hooked_prickles" | "cactus_areole_spine_bursts" | "armored_dragon_scales" | "shelf_fungi_conks" | "biolum_nodule_pustules" | "braided_vines" | "curved_thorns_spines" | "moss_lichen_bark" | "smooth_striated".
 
-REGLAS CRÍTICAS:
-- Si la imagen muestra un TRONCO RETORCIDO CON MUSGO sin hojas planas (madera seca marrón en S con muñones y musgo verde arriba), usa SIEMPRE stemStructure="serpentine_mossy_deadwood", canopyElement="moss_velvet_mantle", surfaceElement="moss_lichen_bark", synthesizedTipPrimitive="bryophyte_moss_pad", params.barkType="mossy_deadwood", colorTrunk="#583e2a", colorLeafMain="#4a7c1d", colorLeafTip="#7cb524".
-- Si la imagen muestra una FLOR ESFÉRICA DE BURBUJAS IRIDISCENTES sobre tallo verde con hojas largas abajo, usa SIEMPRE stemStructure="herbaceous_curved_stalk", canopyElement="spherical_bubble_umbel", synthesizedHeadTopology="spherical_umbel_rays", synthesizedTipPrimitive="iridescent_bubble", synthesizedBasalFoliage="long_grass_blades".`;
+4. COLGANTES ("hangingElement" — 10 opciones) + "filamentCount", "filamentLength":
+   "aerial_root_curtains" | "winged_samara_seeds" | "tethered_scifi_lantern_globes" | "spanish_moss_epiphyte_drapes" | "thorny_barbed_whips" | "weeping_filaments" | "curling_tendrils" | "mycelial_fuzz" | "hanging_pods_berries" | "none".
+
+5. PUNTAS Y BASE ("synthesizedTipPrimitive" — 17 opciones + "synthesizedBasalFoliage" — 5 opciones):
+   - Puntas: "iridescent_bubble", "dewy_droplet", "micro_floret_star", "cupped_bell_calyx", "faceted_crystal_gem", "spotted_spore_dome", "lanceolate_blade", "bryophyte_moss_pad", "scifi_plasma_orb", "spiked_seed_burr", "winged_helicoid_seed", "crowned_pomegranate_pod", "recurved_thorn_claw", "feathery_pappus_plume", "sucker_tentacle_cup", "granulated_berry_cluster", "fuzzy_pom_floret_tuft", "none".
+   - Base: "long_grass_blades", "broad_rosette_leaves", "spiny_succulent_claws", "fern_fiddleheads", "baby_umbel_sprouts", "none".
+
+PASO 3 — TEXTURAS DE CORTEZA, SHADER MULTICOLOR (27 SHADERS) Y PALETA DE 5 COLORES:
+NUNCA dejes todo plano en "natural_botanical" si la imagen tiene manchas, motas, venas neón, bordes contrastados, rayas, arcoíris o brillo cósmico. Elige el shader exacto + los 5 hex contrastantes (colorTrunk, colorLeafMain, colorLeafTip, colorFlower, colorAccent) + patternScale (0.8–1.8) + patternContrast (0.65–0.98):
+- Corteza ("params.barkType" — 18): "armored_scale_bark", "braided_fibrous_bark", "mossy_deadwood", "strangler_vine_lattice", "scifi_biolum_veins", "volcanic_magma_crust", "eucalyptus_rainbow", "cork_oak_quercus", "gnarled_olive_burl", "dragon_scales_cycad", "fissured", "pine_plates", "birch_paper", "smooth_ash", "palm_rings", "bamboo_culm", "cactus_ribs", "fibrous_redwood".
+- Shaders ("params.tonalMode" — 27):
+  • "caladium_neon_vein": Hojas con venas radiales brillantes (colorFlower), borde exterior contrastado (colorTip) y pecas (colorAccent).
+  • "dalmatian_ink_splatter": Manchas orgánicas de tinta oscura (colorAccent) sobre carne pastel/rosa (colorLeafMain/colorLeafTip).
+  • "rainbow_umbel_spectrum": Arcoíris prismático de 4 colores (colorLeafMain → colorLeafTip → colorFlower → colorAccent).
+  • "obsidian_gold_ember_rim": Cuerpo volcánico carbón oscuro con bordes y púas en oro fundido.
+  • "nebula_biolum_crystal": Cápsula índigo-violeta translúcida con filamentos luminosos internos ámbar/rosa.
+  • "freckled_polka_spots": Lunares y pecas bicolores nítidos (Amanita, orquídea punteada, seta).
+  • "spotted_orchid_mottled": Ocelos bi-tono de orquídea.
+  • "jaguar_rosette_mottled": Anillos oscuros con núcleo luminoso.
+  • "zebra_tiger_stripes": Rayas onduladas atigradas de 3 colores.
+  • "stained_glass_venation": Vitral celular mosaico con nervaduras oscuras/brillantes.
+  • "marbled_polychrome_swirl": Mármol fluido mezclando los 5 colores en remolinos.
+  • "picotee_rimmed_petal": Garganta radial cálida + borde exterior picotee contrastado.
+  • "cosmic_speckled_dust": Doble lluvia fina de motas/esporas estelares.
+  • "iridescent_dragon_scales": Escamas imbricadas multitono iridiscentes.
+  • "chlorophyll_variegated": Variegado botánico crema/rosa sobre verde.
+  • "veined_vascular_rib" | "velvet_spore_dust" | "phosphor_mycelial_rim" | "bioluminescent_abyss" | "voronoi_cracked" | "iridescent_chitin" | "translucent_jelly" | "tri_tone_xenogradient" | "striated_banded" | "cel_concept_art" | "spectral_thermal" | "natural_botanical".
+
+PASO 4 — COHERENCIA VISUAL Y REGLAS CRÍTICAS:
+- Ajusta "petalOpenness" fielmente: 0.0–0.2 si está cerrada/capullo, 0.5–0.7 si es copa semiabierta, 0.85–1.0 si está completamente desplegada.
+- Tronco retorcido con musgo sin hojas planas → stemStructure="serpentine_mossy_deadwood", canopyElement="moss_velvet_mantle", surfaceElement="moss_lichen_bark", synthesizedTipPrimitive="bryophyte_moss_pad", barkType="mossy_deadwood".
+- Flor esférica de burbujas iridiscentes → stemStructure="herbaceous_curved_stalk", canopyElement="spherical_bubble_umbel", synthesizedHeadTopology="spherical_umbel_rays", synthesizedTipPrimitive="iridescent_bubble", synthesizedBasalFoliage="long_grass_blades".`;
 
 const PLANT_DESIGN_SCHEMA = {
   type: Type.OBJECT,
@@ -3048,7 +3058,10 @@ async function startServer() {
                 },
               },
               {
-                text: `Analiza esta imagen y construye un elemento 3D a medida combinando stemStructure, canopyElement, surfaceElement y hangingElement en Arborea Studio Pro.${visionHint}${notesBlock}`,
+                text: `Analiza esta imagen paso a paso como arquitecto 3D de Arborea Studio Pro:
+1) Decide si reutilizas partes de la biblioteca (stemStructure, canopyElement, surfaceElement, hangingElement, synthesizedTipPrimitive, synthesizedBasalFoliage) o si debes crear una parte nueva esculpida mediante procedural_lathe_head (latheProfileRadii) o custom_spline_leaf_crown (petalContourProfile).
+2) Elige la textura de corteza (barkType), el shader multicolor/moteado exacto (tonalMode) y los 5 colores hex fieles a la imagen con patternScale y patternContrast adecuados.
+3) Define el montaje completo (height, radius, stemCount, lobeCount, petalOpenness, filamentCount) y explica en aiNewPartsReport qué piezas se reutilizan y cuáles son nuevas.${visionHint}${notesBlock}`,
               },
             ],
             config: genConfig,

@@ -755,6 +755,11 @@ export default function App() {
       'cosmic_speckled_dust',
       'iridescent_dragon_scales',
       'chlorophyll_variegated',
+      'caladium_neon_vein',
+      'dalmatian_ink_splatter',
+      'rainbow_umbel_spectrum',
+      'obsidian_gold_ember_rim',
+      'nebula_biolum_crystal',
       'veined_vascular_rib',
       'phosphor_mycelial_rim',
       'voronoi_cracked',
@@ -3467,6 +3472,10 @@ export default function App() {
                               'toothed_venus_jaw_trap',
                               'crater_tentacle_anemone',
                               'perforated_blossom_urn',
+                              'caladium_heart_leaf_cluster',
+                              'king_protea_crown',
+                              'curled_horn_rosette',
+                              'spiny_crater_dragon_orb',
                               'curled_witchhat_mushroom_cap',
                               'spherical_bubble_umbel',
                             ].includes(curCanopy) ||
@@ -3627,7 +3636,7 @@ export default function App() {
                           </button>
                         </div>
                         <div className="flex gap-1.5 overflow-x-auto pb-1 studio-scroll">
-                          {TONAL_PALETTE_PRESETS.slice(-14)
+                          {TONAL_PALETTE_PRESETS.slice(-24)
                             .reverse()
                             .map((pal) => (
                               <button
