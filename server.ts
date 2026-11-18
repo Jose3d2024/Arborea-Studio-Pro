@@ -44,6 +44,9 @@ const VALID_STEM_STRUCTURES = new Set([
   'hollow_ancient_snag',
   'creeping_rhizome_runners',
   'scifi_tendril_cradle',
+  'scaled_armored_caudex',
+  'segmented_siphon_tubes',
+  'swollen_ovary_calyx_stem',
 ]);
 
 const VALID_CANOPY_ELEMENTS = new Set([
@@ -72,6 +75,16 @@ const VALID_CANOPY_ELEMENTS = new Set([
   'dehiscent_seed_pods_coronas',
   'carnivorous_nepenthes_pitchers',
   'custom_spline_leaf_crown',
+  'conical_floral_spike',
+  'terraced_pagoda_caps',
+  'curled_witchhat_mushroom_cap',
+  'spotted_orchid_labellum_corolla',
+  'giant_arum_spathe_spadix',
+  'toothed_venus_jaw_trap',
+  'crater_tentacle_anemone',
+  'coral_clavaria_fingers',
+  'spiny_fenestrated_pods',
+  'perforated_blossom_urn',
 ]);
 
 const VALID_SYNTH_HEAD_TOPOLOGIES = new Set([
@@ -100,6 +113,8 @@ const VALID_SYNTH_TIP_PRIMITIVES = new Set([
   'recurved_thorn_claw',
   'feathery_pappus_plume',
   'sucker_tentacle_cup',
+  'granulated_berry_cluster',
+  'fuzzy_pom_floret_tuft',
   'none',
 ]);
 
@@ -123,6 +138,8 @@ const VALID_SURFACE_ELEMENTS = new Set([
   'armored_dragon_scales',
   'shelf_fungi_conks',
   'biolum_nodule_pustules',
+  'rhomboid_pinecone_scales',
+  'fleshy_tubercles_warts',
 ]);
 
 const VALID_HANGING_ELEMENTS = new Set([
@@ -248,6 +265,8 @@ const VALID_BARK_TYPES = new Set([
   'strangler_vine_lattice',
   'scifi_biolum_veins',
   'volcanic_magma_crust',
+  'armored_scale_bark',
+  'braided_fibrous_bark',
 ]);
 
 const VALID_TONAL_MODES = new Set([
@@ -260,6 +279,10 @@ const VALID_TONAL_MODES = new Set([
   'striated_banded',
   'cel_concept_art',
   'spectral_thermal',
+  'spotted_orchid_mottled',
+  'velvet_spore_dust',
+  'veined_vascular_rib',
+  'phosphor_mycelial_rim',
 ]);
 
 const VALID_ECOSYSTEM_BASES = new Set([
@@ -328,8 +351,11 @@ Tu misión es analizar la imagen subida y elegir con precisión quirúrgica de l
    - "thorny_horn_crown": Corona radial de astas/hojas carnosas espinosas.
    - "spiral_volute_vine": Lianas en espiral o doble voluta.
    - "rosette_cluster": Roseta suculenta o colonia basal.
+   - "scaled_armored_caudex": Estípite escamoso acorazado cubierto de placas imbricadas.
+   - "segmented_siphon_tubes": Sifones o chimeneas tubulares anilladas curvas.
+   - "swollen_ovary_calyx_stem": Tallo con bulbo ovárico panzudo medio y estambres radiales laterales.
 
-2. "canopyElement" (24 Tipos de Hojas, Globos Sci-Fi, Pétalos, Coronas, Semillas y Musgos 3D):
+2. "canopyElement" (35 Tipos de Hojas, Flores, Setas, Trampas, Anémonas, Globos Sci-Fi y Coronas 3D):
    - "moss_velvet_mantle": Manto 3D de almohadillas de musgo briófito aterciopelado sobre las crestas del tronco (sin hojas planas).
    - "scifi_biolum_plasma_globes": Globos/esferas de plasma bioluminiscente Sci-Fi con anillos orbitales y satélites.
    - "scifi_voronoi_ova_balloons": Globos/ovoides flotantes con exoesqueleto reticular Voronoi y núcleo energético.
@@ -355,8 +381,20 @@ Tu misión es analizar la imagen subida y elegir con precisión quirúrgica de l
    - "cloud_bonsai_pads": Almohadillas densas en nube de bonsái.
    - "thorn_spur_clusters": Racimos de púas y espolones.
    - "stem_hugging_leaves": Hojas adheridas a lo largo del tallo.
+   - "conical_floral_spike": Espiga floral cónica densa de brácteas imbricadas.
+   - "terraced_pagoda_caps": Torres escalonadas de sombreros/discos fúngicos en pagoda luminosa.
+   - "curled_witchhat_mushroom_cap": Seta cónica acampanada con ápice en rizo espiral y verrugas 3D.
+   - "spotted_orchid_labellum_corolla": Corola orquídea moteada de 5 tépalos, labelo rizado y zarcillos antena.
+   - "giant_arum_spathe_spadix": Espata gigante plisada acampanada con alto espádice central cónico.
+   - "toothed_venus_jaw_trap": Trampa carnívora / fauces bilobuladas dentadas (apertura regulable).
+   - "crater_tentacle_anemone": Anémona / cráter cóncavo con corona de tentáculos ondulados.
+   - "coral_clavaria_fingers": Dedos carnosos ramificados en penacho coralino (Clavaria).
+   - "spiny_fenestrated_pods": Vainas ovoides azules/oscuras con ocelos laterales y espinas radiales largas.
+   - "perforated_blossom_urn": Urna/bulbo hinchado fenestrado con costillas y filamentos apicales luminosos.
 
-3. "surfaceElement" (10 Enredaderas de Raíces, Púas, Aguijones, Escamas y Relieves de Corteza):
+3. "surfaceElement" (12 Enredaderas de Raíces, Púas, Aguijones, Escamas y Relieves de Corteza):
+   - "rhomboid_pinecone_scales": Escamas romboidales gruesas tipo piña/bromelia blindada.
+   - "fleshy_tubercles_warts": Verrugas, tubérculos y esporangios sobre corteza.
    - "strangler_root_web": Red entrelazada de raíces enredaderas adheridas al tronco.
    - "rose_hooked_prickles": Aguijones ganchudos recurvados de rosal/zarza.
    - "cactus_areole_spine_bursts": Aréolas lanosas con estallido radial de púas largas.
@@ -376,8 +414,9 @@ Tu misión es analizar la imagen subida y elegir con precisión quirúrgica de l
    - "thorny_barbed_whips": Látigos colgantes armados con púas y garfios.
    - "weeping_filaments" | "curling_tendrils" | "mycelial_fuzz" | "hanging_pods_berries" | "none".
 
-5. "params.barkType" (16 Shaders Procedurales de Corteza de Tronco):
-   - "mossy_deadwood" (Madera seca retorcida con musgo), "strangler_vine_lattice" (Entramado de raíces), "scifi_biolum_veins" (Venas bioluminiscentes Sci-Fi), "volcanic_magma_crust" (Corteza volcánica de magma), "eucalyptus_rainbow" (Eucalipto arcoíris), "cork_oak_quercus" (Alcornoque corchoso), "gnarled_olive_burl" (Olivo milenario nudoso), "dragon_scales_cycad" (Escamas de dragón), "fissured", "pine_plates", "birch_paper", "smooth_ash", "palm_rings", "bamboo_culm", "cactus_ribs", "fibrous_redwood".
+5. "params.barkType" (18 Shaders Procedurales de Corteza) y "params.tonalMode" (13 Shaders Botánicos/Xeno):
+   - barkType: "armored_scale_bark" (Placas rombales), "braided_fibrous_bark" (Fibras trenzadas), "mossy_deadwood", "strangler_vine_lattice", "scifi_biolum_veins", "volcanic_magma_crust", "eucalyptus_rainbow", "cork_oak_quercus", "gnarled_olive_burl", "dragon_scales_cycad", "fissured", "pine_plates", "birch_paper", "smooth_ash", "palm_rings", "bamboo_culm", "cactus_ribs", "fibrous_redwood".
+   - tonalMode: "natural_botanical", "bioluminescent_abyss", "voronoi_cracked", "iridescent_chitin", "translucent_jelly", "tri_tone_xenogradient", "striated_banded", "cel_concept_art", "spectral_thermal", "spotted_orchid_mottled" (Ocelos/lunares de orquídea y seta), "velvet_spore_dust" (Terciopelo mate con polvo de esporas), "veined_vascular_rib" (Venación atigrada de alto contraste), "phosphor_mycelial_rim" (Borde neón fosforescente sobre cuerpo oscuro).
 
 REGLAS CRÍTICAS:
 - Si la imagen muestra un TRONCO RETORCIDO CON MUSGO sin hojas planas (madera seca marrón en S con muñones y musgo verde arriba), usa SIEMPRE stemStructure="serpentine_mossy_deadwood", canopyElement="moss_velvet_mantle", surfaceElement="moss_lichen_bark", synthesizedTipPrimitive="bryophyte_moss_pad", params.barkType="mossy_deadwood", colorTrunk="#583e2a", colorLeafMain="#4a7c1d", colorLeafTip="#7cb524".
@@ -947,7 +986,12 @@ function sanitizeAiPayload(raw: any, visionFeatures?: any) {
       canopyElement === 'custom_fungi_cap' ? 0.82 : 0.0
     ),
     gillCount: Math.round(clamp(ce.gillCount, 8, 40, 24)),
-    petalOpenness: clamp(ce.petalOpenness, 0.05, 1.0, 0.35),
+    petalOpenness: clamp(
+      ce.petalOpenness,
+      0.0,
+      1.0,
+      canopyElement === 'custom_flower_corolla' ? 0.35 : 0.78
+    ),
     leafSerration: clamp(ce.leafSerration, 0.0, 1.0, 0.38),
   };
 
@@ -1302,6 +1346,107 @@ function buildVisionFallbackPayload(visionFeatures: any, userNotes?: string) {
       basal: 'broad_rosette_leaves',
     });
   }
+  if (notes.includes('titan') || notes.includes('titán') || notes.includes('arum') || notes.includes('aro') || notes.includes('espata') || notes.includes('espadice')) {
+    return buildFromSpec({
+      name: 'Aro Titán / Espata Gigante con Espádice',
+      sci: 'Amorphophallus titanum',
+      summary: 'Espata acanalada con volantes alrededor de un gran espádice central vertical.',
+      base: 'mossy_forest_floor',
+      bg: 'dark_studio',
+      stem: 'herbaceous_curved_stalk',
+      canopy: 'giant_arum_spathe_spadix',
+      surface: 'fluted_grooves',
+      hanging: 'none',
+      bark: 'smooth_ash',
+      tonal: 'veined_vascular_rib',
+      basal: 'broad_rosette_leaves',
+      petalOpenness: 0.72,
+    });
+  }
+  if (notes.includes('orquid') || notes.includes('orchid') || notes.includes('motead')) {
+    return buildFromSpec({
+      name: 'Orquídea Moteada de Labelo',
+      sci: 'Phalaenopsis maculata',
+      summary: 'Pétalos radiales y labelo trilobulado con patrón moteado celular orgánico.',
+      base: 'mossy_forest_floor',
+      bg: 'dark_studio',
+      stem: 'herbaceous_curved_stalk',
+      canopy: 'spotted_orchid_labellum_corolla',
+      surface: 'smooth_striated',
+      hanging: 'curling_tendrils',
+      bark: 'smooth_ash',
+      tonal: 'spotted_orchid_mottled',
+      basal: 'broad_rosette_leaves',
+      petalOpenness: 0.78,
+    });
+  }
+  if (notes.includes('venus') || notes.includes('atrapamoscas') || notes.includes('trampa') || notes.includes('mandib')) {
+    return buildFromSpec({
+      name: 'Trampa Dentada Carnívora',
+      sci: 'Dionaea muscipula var.',
+      summary: 'Mandíbulas bilobuladas dentadas con nervaduras vasculares carmesí.',
+      base: 'mossy_forest_floor',
+      bg: 'daylight_arch',
+      stem: 'herbaceous_curved_stalk',
+      canopy: 'toothed_venus_jaw_trap',
+      surface: 'thorny_spines',
+      hanging: 'none',
+      bark: 'smooth_ash',
+      tonal: 'veined_vascular_rib',
+      tip: 'recurved_thorn_claw',
+      basal: 'broad_rosette_leaves',
+      petalOpenness: 0.75,
+    });
+  }
+  if (notes.includes('anemona') || notes.includes('anémona') || notes.includes('aseroe') || notes.includes('tentac') || notes.includes('tentác')) {
+    return buildFromSpec({
+      name: 'Anémona / Hongo Estrella de Tentáculos',
+      sci: 'Aseroe rubra var.',
+      summary: 'Cráter central oscuro rodeado de tentáculos radiales carnosos con ventosas.',
+      base: 'mossy_forest_floor',
+      bg: 'dark_studio',
+      stem: 'herbaceous_curved_stalk',
+      canopy: 'crater_tentacle_anemone',
+      surface: 'biolum_nodule_pustules',
+      hanging: 'curling_tendrils',
+      bark: 'smooth_ash',
+      tonal: 'velvet_spore_dust',
+      tip: 'sucker_tentacle_cup',
+      petalOpenness: 0.85,
+    });
+  }
+  if (notes.includes('urna') || notes.includes('overflower') || notes.includes('perforad')) {
+    return buildFromSpec({
+      name: 'Urna Floral Perforada / Overflower',
+      sci: 'Sarracenia perforata',
+      summary: 'Urna bulbosa perforada en tonos cálidos sobre raíces retorcidas.',
+      base: 'mossy_forest_floor',
+      bg: 'daylight_arch',
+      stem: 'stilt_root_mangrove',
+      canopy: 'perforated_blossom_urn',
+      surface: 'fluted_grooves',
+      hanging: 'none',
+      bark: 'armored_scale_bark',
+      tonal: 'veined_vascular_rib',
+      petalOpenness: 0.55,
+    });
+  }
+  if (notes.includes('bruja') || notes.includes('sombrero') || notes.includes('witch')) {
+    return buildFromSpec({
+      name: 'Seta de Sombrero Curvo Moteado',
+      sci: 'Mycena uncinata',
+      summary: 'Sombrero cónico curvo en espiral con verrugas aterciopeladas y borde micelial.',
+      base: 'mossy_forest_floor',
+      bg: 'dark_studio',
+      stem: 'herbaceous_curved_stalk',
+      canopy: 'curled_witchhat_mushroom_cap',
+      surface: 'biolum_nodule_pustules',
+      hanging: 'mycelial_fuzz',
+      bark: 'phosphor_mycelial_rim',
+      tonal: 'velvet_spore_dust',
+      tip: 'spotted_spore_dome',
+    });
+  }
   if (notes.includes('carnívora') || notes.includes('carnivora') || notes.includes('jarra') || notes.includes('nepenthes')) {
     return buildFromSpec({
       name: 'Nepenthes de Jarras Carnívoras',
@@ -1513,7 +1658,270 @@ function buildVisionFallbackPayload(visionFeatures: any, userNotes?: string) {
     const topDens = typeof vf.topDensityRatio === 'number' ? vf.topDensityRatio : 0.55;
     const upW = typeof vf.upperWidthRatio === 'number' ? vf.upperWidthRatio : 0.55;
     const lowW = typeof vf.lowerWidthRatio === 'number' ? vf.lowerWidthRatio : 0.4;
+    const apexW = typeof vf.apexWidthRatio === 'number' ? vf.apexWidthRatio : 0.65;
+    const midBulge = typeof vf.midBulgeRatio === 'number' ? vf.midBulgeRatio : 1.0;
+    const spotVar = typeof vf.capSpotVariance === 'number' ? vf.capSpotVariance : 0.15;
+    const clusters = typeof vf.vividClusterCount === 'number' ? vf.vividClusterCount : 1;
+    const capIsl = typeof vf.upperCapIslands === 'number' ? vf.upperCapIslands : 1.0;
+    const stemIsl = typeof vf.midStemIslands === 'number' ? vf.midStemIslands : 1.2;
+    const scurve = typeof vf.trunkSCurve === 'number' ? vf.trunkSCurve : 0.18;
+    const centerOpen = typeof vf.centerOpenness === 'number' ? vf.centerOpenness : 0.25;
     const darkBg = Boolean(vf.isDarkSceneBg);
+
+    const silRadii =
+      Array.isArray(vf.silhouetteRadii) && vf.silhouetteRadii.length >= 4
+        ? vf.silhouetteRadii.map((x: any) => clamp(x, 0.14, 1.15, 0.55))
+        : undefined;
+    const upperCol = vf.colorUpper || vf.colorLeafTip || vf.colorFlower || '#ec4899';
+    const lowerCol = vf.colorLower || vf.colorTrunk || '#2e5c24';
+
+    // 1. MULTI-CLUSTER SPHERICAL UMBEL / SLIME MOLD COLONY (e.g. yellow/cyan/orange beads on thin stalks)
+    if (
+      clusters >= 3 &&
+      capIsl >= 1.65 &&
+      lowW < 0.45 &&
+      spiky < 0.36 &&
+      !(vf.dominantHueCategory === 'golden' && darkBg && clusters >= 5 && capIsl >= 2.2)
+    ) {
+      return buildFromSpec({
+        name: 'Colonia de Esferas / Umbela de Esporas',
+        sci: 'Physarum sphaerocephalum',
+        summary: 'Múltiples tallos delgados coronados por esferas/glóbulos botánicos en la paleta de la foto.',
+        base: 'mossy_forest_floor',
+        bg: darkBg ? 'dark_studio' : 'daylight_arch',
+        stem: clusters >= 4 ? 'multi_stalk_umbel_colony' : 'herbaceous_curved_stalk',
+        canopy: 'spherical_bubble_umbel',
+        surface: 'biolum_nodule_pustules',
+        hanging: 'none',
+        bark: 'smooth_ash',
+        tonal: darkBg ? 'velvet_spore_dust' : 'natural_botanical',
+        stemCount: clamp(clusters + 1, 3, 8, 5),
+        tip: vf.dominantHueCategory === 'cyan' ? 'iridescent_bubble' : 'granulated_berry_cluster',
+        colTrunk: lowerCol,
+        colMain: vf.colorLeafMain || upperCol,
+        colTip: upperCol,
+        colFlower: vf.colorFlower || upperCol,
+        colAccent: vf.colorAccent || '#fde047',
+      });
+    }
+
+    // 2. CURLED WITCH-HAT MUSHROOM / POINTED SPOTTED FUNGUS CAP (narrow curved apex + spotted cap)
+    if (
+      (apexW <= 0.48 && topDens >= 0.52 && spotVar >= 0.22 && ar >= 0.95) ||
+      (spotVar >= 0.34 && upW >= 0.40 && lowW < 0.34 && (vf.dominantHueCategory === 'violet' || vf.dominantHueCategory === 'cyan' || vf.dominantHueCategory === 'crimson'))
+    ) {
+      return buildFromSpec({
+        name: 'Seta / Sombrero Curvo Moteado',
+        sci: 'Mycena spiralis',
+        summary: 'Sombrero cónico de ápice curvado con verrugas/motas en relieve sobre estípite esbelto.',
+        base: 'mossy_forest_floor',
+        bg: darkBg ? 'dark_studio' : 'daylight_arch',
+        stem: 'herbaceous_curved_stalk',
+        canopy: 'curled_witchhat_mushroom_cap',
+        surface: 'biolum_nodule_pustules',
+        hanging: 'mycelial_fuzz',
+        bark: 'phosphor_mycelial_rim',
+        tonal: 'velvet_spore_dust',
+        stemCount: 1,
+        tip: 'spotted_spore_dome',
+        colTrunk: lowerCol,
+        colMain: vf.colorLeafMain || upperCol,
+        colTip: upperCol,
+        colFlower: vf.colorFlower || upperCol,
+        colAccent: vf.colorAccent || '#f8fafc',
+      });
+    }
+
+    // 3. GIANT TITAN ARUM / TALL SPATHE & CENTRAL SPADIX (narrow tall apex spire + wide mid collar)
+    if (
+      ar >= 1.18 &&
+      apexW <= 0.44 &&
+      upW >= 0.34 &&
+      (vf.dominantHueCategory === 'crimson' || vf.dominantHueCategory === 'violet' || vf.dominantHueCategory === 'earthy') &&
+      midBulge >= 0.92
+    ) {
+      return buildFromSpec({
+        name: 'Espata Gigante con Espádice Central (Aro)',
+        sci: 'Amorphophallus speciosus',
+        summary: 'Espata acampanada y rizada envolviendo un gran espádice vertical central en los tonos de la imagen.',
+        base: 'mossy_forest_floor',
+        bg: darkBg ? 'dark_studio' : 'daylight_arch',
+        stem: 'herbaceous_curved_stalk',
+        canopy: 'giant_arum_spathe_spadix',
+        surface: 'fluted_grooves',
+        hanging: 'none',
+        bark: 'smooth_ash',
+        tonal: 'veined_vascular_rib',
+        stemCount: 1,
+        petalOpenness: 0.72,
+        basal: vf.hasGreenBasalStem ? 'broad_rosette_leaves' : 'none',
+        colTrunk: lowerCol,
+        colMain: vf.colorLeafMain || '#7f1d1d',
+        colTip: upperCol,
+        colFlower: vf.colorFlower || upperCol,
+        colAccent: vf.colorAccent || '#fef08a',
+      });
+    }
+
+    // 4. PERFORATED URN / CARNIVOROUS PITCHER / SWOLLEN BULBOUS CUP (bulbous mid bulge + open top cavity)
+    if (
+      (midBulge >= 1.18 && centerOpen >= 0.24 && ar >= 0.95) ||
+      (midBulge >= 1.08 && ar >= 1.15 && upW >= 0.42 && lowW <= 0.38 && spiky < 0.32)
+    ) {
+      return buildFromSpec({
+        name: 'Urna / Jarra Carnívora Perforada',
+        sci: 'Nepenthes urceolata',
+        summary: 'Estructura acopada o en urna bulbosa con peristoma vascular y cavidad interior profunda.',
+        base: 'mossy_forest_floor',
+        bg: darkBg ? 'dark_studio' : 'daylight_arch',
+        stem: scurve >= 0.28 ? 'stilt_root_mangrove' : 'herbaceous_curved_stalk',
+        canopy: 'perforated_blossom_urn',
+        surface: 'fluted_grooves',
+        hanging: 'none',
+        bark: 'armored_scale_bark',
+        tonal: 'veined_vascular_rib',
+        stemCount: 1,
+        petalOpenness: clamp(upW * 1.1, 0.35, 0.85, 0.58),
+        colTrunk: lowerCol,
+        colMain: vf.colorLeafMain || '#d97706',
+        colTip: upperCol,
+        colFlower: vf.colorFlower || upperCol,
+        colAccent: vf.colorAccent || '#fde047',
+      });
+    }
+
+    // 5. SPOTTED ORCHID LABELLUM COROLLA (high spot variance + multi-lobed upper flower + colorful)
+    if (
+      spotVar >= 0.26 &&
+      capIsl >= 1.6 &&
+      ar >= 0.80 &&
+      ar <= 1.38 &&
+      (vf.dominantHueCategory === 'cyan' || vf.dominantHueCategory === 'golden' || vf.dominantHueCategory === 'violet' || vf.dominantHueCategory === 'crimson')
+    ) {
+      return buildFromSpec({
+        name: 'Orquídea Moteada de Labelo Simétrico',
+        sci: 'Orchidaceae maculata',
+        summary: 'Corola zigomorfa con pétalos estrellados, labelo central y moteado celular extraído de la foto.',
+        base: 'mossy_forest_floor',
+        bg: darkBg ? 'dark_studio' : 'daylight_arch',
+        stem: 'herbaceous_curved_stalk',
+        canopy: 'spotted_orchid_labellum_corolla',
+        surface: 'smooth_striated',
+        hanging: 'curling_tendrils',
+        bark: 'smooth_ash',
+        tonal: 'spotted_orchid_mottled',
+        stemCount: 1,
+        petalOpenness: 0.82,
+        basal: vf.hasGreenBasalStem ? 'broad_rosette_leaves' : 'none',
+        colTrunk: lowerCol,
+        colMain: vf.colorLeafMain || upperCol,
+        colTip: upperCol,
+        colFlower: vf.colorFlower || upperCol,
+        colAccent: vf.colorAccent || '#f59e0b',
+      });
+    }
+
+    // 6. CRATER TENTACLE ANEMONE / STARFISH FUNGUS (very high radial spikiness + crater center + warm/crimson/violet)
+    if (spiky >= 0.36 && upW >= 0.50 && centerOpen >= 0.22) {
+      return buildFromSpec({
+        name: 'Anémona / Estrella de Tentáculos Radiales',
+        sci: 'Aseroe tentaculata',
+        summary: 'Cráter central oscuro rodeado de brazos o tentáculos radiales afilados en el color exacto de la imagen.',
+        base: 'mossy_forest_floor',
+        bg: darkBg ? 'dark_studio' : 'daylight_arch',
+        stem: 'herbaceous_curved_stalk',
+        canopy: 'crater_tentacle_anemone',
+        surface: 'biolum_nodule_pustules',
+        hanging: 'curling_tendrils',
+        bark: 'smooth_ash',
+        tonal: 'velvet_spore_dust',
+        stemCount: 1,
+        petalOpenness: 0.86,
+        tip: 'sucker_tentacle_cup',
+        colTrunk: lowerCol,
+        colMain: vf.colorLeafMain || '#dc2626',
+        colTip: upperCol,
+        colFlower: vf.colorFlower || upperCol,
+        colAccent: vf.colorAccent || '#450a0a',
+      });
+    }
+
+    // 7. TOOTHED VENUS JAW TRAP (spiky hinged bilobed trap + wide lower base or curved jaws)
+    if (
+      spiky >= 0.31 &&
+      midBulge >= 0.90 &&
+      ar <= 1.32 &&
+      (vf.dominantHueCategory === 'green' || vf.dominantHueCategory === 'crimson')
+    ) {
+      return buildFromSpec({
+        name: 'Trampa Bilobulada Dentada',
+        sci: 'Dionaea dentata',
+        summary: 'Mandíbulas vegetales dentadas con nervaduras vasculares y cilios marginales rígidos.',
+        base: 'mossy_forest_floor',
+        bg: darkBg ? 'dark_studio' : 'daylight_arch',
+        stem: 'herbaceous_curved_stalk',
+        canopy: 'toothed_venus_jaw_trap',
+        surface: 'thorny_spines',
+        hanging: 'none',
+        bark: 'smooth_ash',
+        tonal: 'veined_vascular_rib',
+        stemCount: 1,
+        petalOpenness: 0.72,
+        tip: 'recurved_thorn_claw',
+        basal: 'broad_rosette_leaves',
+        colTrunk: lowerCol,
+        colMain: vf.colorLeafMain || '#16a34a',
+        colTip: upperCol,
+        colFlower: vf.colorFlower || '#dc2626',
+        colAccent: vf.colorAccent || '#fef08a',
+      });
+    }
+
+    // 8. TALL CONICAL FLORAL SPIKE (very tall vertical column ar > 1.35)
+    if (ar >= 1.32 && upW <= 0.56 && lowW <= 0.45) {
+      return buildFromSpec({
+        name: 'Espiga / Inflorescencia Cónica Vertical',
+        sci: 'Aloeformis spicata',
+        summary: 'Eje columnar elevado cubierto de brácteas florales ascendentes sobre roseta basal.',
+        base: 'desert_dunes',
+        bg: darkBg ? 'dark_studio' : 'daylight_arch',
+        stem: 'herbaceous_curved_stalk',
+        canopy: 'conical_floral_spike',
+        surface: 'armored_dragon_scales',
+        hanging: 'none',
+        bark: 'armored_scale_bark',
+        tonal: 'natural_botanical',
+        stemCount: 1,
+        basal: vf.hasGreenBasalStem ? 'broad_rosette_leaves' : 'agave_spiny_rosette',
+        colTrunk: lowerCol,
+        colMain: vf.colorLeafMain || upperCol,
+        colTip: upperCol,
+        colFlower: vf.colorFlower || upperCol,
+        colAccent: vf.colorAccent || '#fde047',
+      });
+    }
+
+    // 9. BRAIDED TRUNK TREE WITH PENDANT FRUITS/FLOWERS (high trunk S-curve + woody base + dense canopy)
+    if (scurve >= 0.28 && topDens >= 0.48 && stemIsl >= 1.45 && lowW >= 0.24) {
+      return buildFromSpec({
+        name: 'Árbol de Tronco Trenzado con Frutos',
+        sci: 'Ficus tortilis',
+        summary: 'Tronco leñoso trenzado en hélice con copa frondosa y frutos o racimos colgantes.',
+        base: 'temperate_forest',
+        bg: darkBg ? 'dark_studio' : 'daylight_arch',
+        stem: 'braided_liana_trunk',
+        canopy: 'custom_leaf_lamina',
+        surface: 'braided_fibers',
+        hanging: 'hanging_pods_berries',
+        bark: 'braided_fibrous_bark',
+        tonal: 'natural_botanical',
+        colTrunk: lowerCol,
+        colMain: vf.colorLeafMain || '#15803d',
+        colTip: upperCol,
+        colFlower: vf.colorFlower || '#f97316',
+        colAccent: vf.colorAccent || '#fbbf24',
+      });
+    }
 
     if (vf.dominantHueCategory === 'cyan') {
       return buildFromSpec({
@@ -1530,6 +1938,11 @@ function buildVisionFallbackPayload(visionFeatures: any, userNotes?: string) {
         tonal: darkBg ? 'bioluminescent_abyss' : 'iridescent_chitin',
         tip: darkBg ? 'scifi_plasma_orb' : 'faceted_crystal_gem',
         headTopo: darkBg ? 'none' : 'crystal_spire_cluster',
+        colTrunk: lowerCol,
+        colMain: vf.colorLeafMain || '#06b6d4',
+        colTip: upperCol,
+        colFlower: vf.colorFlower || upperCol,
+        colAccent: vf.colorAccent || '#a855f7',
       });
     }
 
@@ -1553,18 +1966,16 @@ function buildVisionFallbackPayload(visionFeatures: any, userNotes?: string) {
         tonal: darkBg ? 'bioluminescent_abyss' : 'natural_botanical',
         tip: darkBg ? 'scifi_plasma_orb' : 'cupped_bell_calyx',
         basal: darkBg ? 'none' : 'broad_rosette_leaves',
+        colTrunk: lowerCol,
+        colMain: vf.colorLeafMain || '#7c3aed',
+        colTip: upperCol,
+        colFlower: vf.colorFlower || upperCol,
+        colAccent: vf.colorAccent || '#38bdf8',
       });
     }
 
-    const silRadii =
-      Array.isArray(vf.silhouetteRadii) && vf.silhouetteRadii.length >= 4
-        ? vf.silhouetteRadii.map((x: any) => clamp(x, 0.14, 1.15, 0.55))
-        : undefined;
-    const upperCol = vf.colorUpper || vf.colorLeafTip || vf.colorFlower || '#ec4899';
-    const lowerCol = vf.colorLower || vf.colorTrunk || '#2e5c24';
-
     if (vf.dominantHueCategory === 'crimson' || vf.dominantHueCategory === 'golden') {
-      const hasMultiClusters = (vf.vividClusterCount ?? 1) >= 5 && (vf.upperCapIslands ?? 1) >= 2.1;
+      const hasMultiClusters = clusters >= 5 && capIsl >= 2.1;
       if (hasMultiClusters && darkBg && (vf.dominantHueCategory === 'golden' || vf.warmOrangeRatio > 0.12)) {
         // Handled cleanly by isFungiUmbelColony right below
       } else if (ar < 0.98 && lowW >= upW * 0.85 && spiky > 0.25) {
@@ -1589,12 +2000,34 @@ function buildVisionFallbackPayload(visionFeatures: any, userNotes?: string) {
           colFlower: upperCol,
           colAccent: vf.colorAccent || '#f472b6',
         });
+      } else if (spiky >= 0.30 && upW >= 0.48) {
+        return buildFromSpec({
+          name: 'Pasiflora / Corona Estrellada de Filamentos',
+          sci: 'Passiflora radiata',
+          summary: 'Corola radial con corona de filamentos y brácteas abiertas según el contorno detectado.',
+          base: 'mossy_forest_floor',
+          bg: darkBg ? 'dark_studio' : 'daylight_arch',
+          stem: 'herbaceous_curved_stalk',
+          canopy: 'passionflower_filament_corona',
+          surface: 'smooth_striated',
+          hanging: 'curling_tendrils',
+          bark: 'smooth_ash',
+          tonal: 'natural_botanical',
+          stemCount: 1,
+          petalOpenness: 0.78,
+          basal: vf.hasGreenBasalStem ? 'broad_rosette_leaves' : 'none',
+          colTrunk: lowerCol,
+          colMain: vf.colorLeafMain || upperCol,
+          colTip: upperCol,
+          colFlower: vf.colorFlower || upperCol,
+          colAccent: vf.colorAccent || '#fde047',
+        });
       } else {
-        const isLotusLike = upW >= 0.45 || !darkBg;
+        const isLotusLike = upW >= 0.48 && apexW >= 0.42;
         return buildFromSpec({
           name: isLotusLike ? 'Corola Floral / Loto Esculpido' : 'Flor Esculpida en Tallo Fino',
           sci: 'Magnoliophyta speciosa',
-          summary: 'Tallo único limpio con follaje basal verde y corola floral orgánica en los colores exactos de la fotografía.',
+          summary: 'Tallo único limpio con follaje basal y corola floral orgánica en los colores exactos de la fotografía.',
           base: 'mossy_forest_floor',
           bg: darkBg ? 'dark_studio' : 'daylight_arch',
           stem: 'herbaceous_curved_stalk',
@@ -2342,10 +2775,10 @@ async function startServer() {
 
     let customPartsContext = '';
     if (Array.isArray(customParts) && customParts.length > 0) {
-      customPartsContext = `\n\n=== BIBLIOTECA MODULAR PERSONALIZADA DEL USUARIO (${Math.min(16, customParts.length)} piezas) ===\nSi la imagen encaja con alguna de estas piezas creadas/guardadas por el usuario o por la IA anteriormente, puedes reutilizar o combinar sus valores exactos en "customElement":\n`;
-      customParts.slice(0, 16).forEach((part: any) => {
+      customPartsContext = `\n\n=== BIBLIOTECA UNIFICADA DE PARTES (${Math.min(32, customParts.length)} piezas disponibles de especies, IA y usuario) ===\nBusca primero aquí si la imagen coincide con partes ya existentes y reutiliza o combina sus valores exactos en "customElement". Si la parte NO existe en esta biblioteca, sintetiza una nueva morfología (nuevos valores, "petalContourProfile" o "latheProfileRadii") para que el sistema la guarde automáticamente:\n`;
+      customParts.slice(0, 32).forEach((part: any) => {
         const el = part?.element || {};
-        customPartsContext += `- [${part?.name || el?.name || 'Parte'}]: stemStructure=${el.stemStructure}, canopyElement=${el.canopyElement}, surfaceElement=${el.surfaceElement}, hangingElement=${el.hangingElement}, synthesizedHeadTopology=${el.synthesizedHeadTopology || 'none'}, synthesizedTipPrimitive=${el.synthesizedTipPrimitive || 'none'}, synthesizedBasalFoliage=${el.synthesizedBasalFoliage || 'none'}, latheProfileRadii=${JSON.stringify(el.latheProfileRadii || [])}, petalContourProfile=${JSON.stringify(el.petalContourProfile || [])}, petalCupping=${el.petalCupping ?? 0.38}, petalTwistDeg=${el.petalTwistDeg ?? 14}, petalMarginWave=${el.petalMarginWave ?? 0.16}, umbelRayCount=${el.umbelRayCount ?? 64}, petalOpenness=${el.petalOpenness ?? 0.4}, thornDensity=${el.thornDensity ?? 0}\n`;
+        customPartsContext += `- [${part?.name || el?.name || 'Parte'} | ${part?.category || 'parte'} | ${part?.source || 'library'}]: stemStructure=${el.stemStructure || '-'}, canopyElement=${el.canopyElement || '-'}, surfaceElement=${el.surfaceElement || '-'}, hangingElement=${el.hangingElement || '-'}, synthesizedHeadTopology=${el.synthesizedHeadTopology || 'none'}, synthesizedTipPrimitive=${el.synthesizedTipPrimitive || 'none'}, synthesizedBasalFoliage=${el.synthesizedBasalFoliage || 'none'}, latheProfileRadii=${JSON.stringify(el.latheProfileRadii || [])}, petalContourProfile=${JSON.stringify(el.petalContourProfile || [])}, petalCupping=${el.petalCupping ?? 0.38}, petalTwistDeg=${el.petalTwistDeg ?? 14}, petalMarginWave=${el.petalMarginWave ?? 0.16}, umbelRayCount=${el.umbelRayCount ?? 64}, petalOpenness=${el.petalOpenness ?? 0.4}, thornDensity=${el.thornDensity ?? 0}\n`;
       });
     }
 
@@ -2578,12 +3011,26 @@ async function startServer() {
       },
     });
 
+    const cloudModels = [
+      { id: 'gemini-2.5-flash', useThinking: true },
+      { id: 'gemini-2.0-flash', useThinking: false },
+      { id: 'gemini-4-hydrogen', useThinking: true },
+    ];
     let lastErr: any = null;
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < cloudModels.length; attempt++) {
+      const mCfg = cloudModels[attempt];
       try {
+        const genConfig: any = {
+          systemInstruction: `${BOTANICAL_SYSTEM_PROMPT}${customPartsContext}`,
+          responseMimeType: 'application/json',
+          responseSchema: PLANT_DESIGN_SCHEMA,
+        };
+        if (mCfg.useThinking) {
+          genConfig.thinkingConfig = { thinkingLevel: ThinkingLevel.LOW };
+        }
         const response = await Promise.race([
           ai.models.generateContent({
-            model: 'gemini-4-hydrogen',
+            model: mCfg.id,
             contents: [
               {
                 inlineData: {
@@ -2595,15 +3042,13 @@ async function startServer() {
                 text: `Analiza esta imagen y construye un elemento 3D a medida combinando stemStructure, canopyElement, surfaceElement y hangingElement en Arborea Studio Pro.${visionHint}${notesBlock}`,
               },
             ],
-            config: {
-              systemInstruction: `${BOTANICAL_SYSTEM_PROMPT}${customPartsContext}`,
-              responseMimeType: 'application/json',
-              responseSchema: PLANT_DESIGN_SCHEMA,
-              thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-            },
+            config: genConfig,
           }),
           new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('Timeout esperando respuesta de Cloud IA (9s)')), 9000)
+            setTimeout(
+              () => reject(new Error(`Timeout esperando respuesta de Cloud IA (${mCfg.id}, 18s)`)),
+              18000
+            )
           ),
         ]);
 
@@ -2611,16 +3056,16 @@ async function startServer() {
         if (rawText) {
           const parsed = JSON.parse(rawText);
           const sanitized = sanitizeAiPayload(parsed, visionFeatures);
-          res.json({ result: sanitized, providerUsed: 'Cloud Vision IA' });
+          res.json({ result: sanitized, providerUsed: `Cloud Vision IA (${mCfg.id})` });
           return;
         }
       } catch (err: any) {
         lastErr = err;
-        console.warn(`Intento ${attempt + 1} en /api/ai/design-plant:`, err?.status || err?.message);
-        if (String(err?.message || '').includes('Timeout')) break;
-        if (attempt === 0) {
-          await new Promise((r) => setTimeout(r, 450));
-        }
+        console.warn(
+          `Intento ${attempt + 1} (${mCfg.id}) en /api/ai/design-plant:`,
+          err?.status || err?.message
+        );
+        await new Promise((r) => setTimeout(r, 250));
       }
     }
 
