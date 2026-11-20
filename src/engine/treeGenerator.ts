@@ -534,8 +534,8 @@ function attachBotanicalShader(
             totalEmissiveRadiance += gradCol * fresnel * uEmissiveIntensity * 0.55;
           }
         }
-        // Mode 6: Striated Mineral Bands
-        else if (uTonalMode == 6) {
+        // Mode 6: Striated Mineral Bands (Foliage/Petals only so bark keeps real wood color)
+        else if (uTonalMode == 6 && uIsFoliage > 0.5) {
           float warp = sin(vBotanyWorldPos.x * 3.5 + vBotanyWorldPos.z * 3.5) * 0.25;
           float band = 0.5 + 0.5 * sin((vBotanyWorldPos.y + warp) * 10.0 * uPatternScale);
           float sharpBand = smoothstep(0.35, 0.65, band);
@@ -568,8 +568,10 @@ function attachBotanicalShader(
           reflectedLight.directDiffuse = specCol * (0.45 + length(reflectedLight.directDiffuse) * 0.55);
           totalEmissiveRadiance += specCol * (0.25 + uEmissiveIntensity * 0.55);
         }
+        // Modes 9..26: Foliage/Petal/Cap Pattern Shaders (applied strictly to foliage/detail, NEVER painting bark!)
+        else if (uIsFoliage > 0.5) {
         // Mode 9: Spotted Orchid Mottled / Bi-Tone Leopard Ocelli
-        else if (uTonalMode == 9) {
+        if (uTonalMode == 9) {
           vec3 sp = vBotanyWorldPos * (4.8 * max(0.3, uPatternScale));
           sp += 0.28 * sin(sp.yzx * 2.1);
           vec3 spotVor = botanyVoronoiCell(sp);
@@ -816,6 +818,7 @@ function attachBotanicalShader(
           reflectedLight.directDiffuse = mix(reflectedLight.directDiffuse, shellCol * lScale, 0.78);
           totalEmissiveRadiance += (nebCol * (filament * 0.9 + coreGlow * 0.65) + uTipColor * fresnel * 0.45) * max(0.4, uEmissiveIntensity * 1.35) * pulse;
         }
+        } // end uIsFoliage > 0.5 for Modes 9..26
         `
       );
     }

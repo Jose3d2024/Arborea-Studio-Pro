@@ -92,6 +92,7 @@ const VALID_CANOPY_ELEMENTS = new Set([
   'curled_horn_rosette',
   'spiny_crater_dragon_orb',
   'lacy_veil_spiked_mushroom',
+  'photo_sculpted_reconstruction',
 ]);
 
 const VALID_SYNTH_HEAD_TOPOLOGIES = new Set([
@@ -355,13 +356,16 @@ Tu misión al analizar una imagen (y notas del usuario) es decidir exactamente Q
 
 ═══ PROTOCOLO DE DECISIÓN Y ENSAMBLAJE (4 PASOS OBLIGATORIOS) ═══
 
-PASO 1 — REUTILIZAR PARTES EXISTENTES vs CREAR PARTES NUEVAS:
-- Revisa primero la BIBLIOTECA UNIFICADA DE PARTES (catálogo abajo + bloque "PARTES GUARDADAS" si aparece al final).
-- Si una pieza existente coincide con la silueta de la imagen, REUTILÍZALA directamente indicando su enum exacto.
-- Si la imagen tiene una silueta de cáliz/urna/copa o de pétalo/hoja que NO existe en la biblioteca, ORDENA A LA APLICACIÓN CREAR UNA PARTE NUEVA:
-  • Para cálices, urnas, hongos o cápsulas por revolución 3D inédita: usa canopyElement="procedural_lathe_head", synthesizedHeadTopology="revolved_lathe_chalice" y define "latheProfileRadii" (array de 5 a 8 radios entre 0.08 y 1.15, de base a cúspide).
-  • Para pétalos, hojas o brácteas inéditas: usa canopyElement="custom_spline_leaf_crown", synthesizedHeadTopology="spline_petal_corona" y define "petalContourProfile" (5–8 anchuras), "petalCupping" (0–1), "petalTwistDeg" (-45..45) y "petalMarginWave" (0–0.4).
-- Documenta SIEMPRE en "customElement.aiNewPartsReport" qué partes reutilizaste y qué partes nuevas esculpiste (la aplicación guardará automáticamente las partes nuevas en la Biblioteca Unificada).
+PASO 1 — PRIORIDAD ABSOLUTA AL PARECIDO VISUAL CON LA IMAGEN (ANTES QUE REUTILIZAR):
+- TU OBJETIVO #1 ES QUE EL MODELO 3D SE PAREZCA LO MÁXIMO POSIBLE A LA FOTO EN SILUETA, PROPORCIONES, APERTURA, TEXTURA Y COLORES.
+- NO fuerces una pieza existente de la biblioteca si su forma solo se parece "a medias" a la fotografía.
+- REGLA DE ORO:
+  1. Primero observa la silueta exacta de la fotografía (¿es una copa/urna abombada, una corola de pétalos afilados/rizados, una seta con bordes ondulados, una roseta con puntas curvas, un árbol retorcido?).
+  2. Si la forma de la imagen es ÚNICA o NO coincide con >85% de fidelidad con un preset existente, **CREA UNA PARTE NUEVA ESCULPIDA A MEDIDA**:
+     • Para cálices, urnas, hongos, bulbos o cuerpos de revolución propios de la foto: usa canopyElement="procedural_lathe_head", synthesizedHeadTopology="revolved_lathe_chalice" y traza "latheProfileRadii" (array de 6 a 8 radios entre 0.08 y 1.15 siguiendo fielmente la silueta de base a cúspide de la imagen).
+     • Para pétalos, hojas, brácteas o rosetas con forma propia de la foto: usa canopyElement="custom_spline_leaf_crown", synthesizedHeadTopology="spline_petal_corona" y esculpe "petalContourProfile" (6–8 anchuras), "petalCupping" (0–1), "petalTwistDeg" (-45..45), "petalMarginWave" (0–0.4) y "petalOpenness" (0–1).
+  3. Solo reutiliza una pieza existente del catálogo o de la Biblioteca Unificada cuando su geometría 3D YA coincida fielmente con la planta de la fotografía.
+- Documenta SIEMPRE en "customElement.aiNewPartsReport" qué partes nuevas esculpiste para lograr el parecido exacto y cuáles reutilizaste (la aplicación guardará automáticamente las partes nuevas en la Biblioteca Unificada).
 
 PASO 2 — ENSAMBLAJE ANATÓMICO (CÓMO MONTAR LA ESPECIE):
 Ensambla de forma coherente las 6 capas estructurales + proporciones:
@@ -436,10 +440,18 @@ NUNCA dejes todo plano en "natural_botanical" si la imagen tiene manchas, motas,
   • "chlorophyll_variegated": Variegado botánico crema/rosa sobre verde.
   • "veined_vascular_rib" | "velvet_spore_dust" | "phosphor_mycelial_rim" | "bioluminescent_abyss" | "voronoi_cracked" | "iridescent_chitin" | "translucent_jelly" | "tri_tone_xenogradient" | "striated_banded" | "cel_concept_art" | "spectral_thermal" | "natural_botanical".
 
-PASO 4 — COHERENCIA VISUAL Y REGLAS CRÍTICAS:
+PASO 4 — COHERENCIA VISUAL Y REGLAS CRÍTICAS (FEW-SHOT):
 - Ajusta "petalOpenness" fielmente: 0.0–0.2 si está cerrada/capullo, 0.5–0.7 si es copa semiabierta, 0.85–1.0 si está completamente desplegada.
-- Tronco retorcido con musgo sin hojas planas → stemStructure="serpentine_mossy_deadwood", canopyElement="moss_velvet_mantle", surfaceElement="moss_lichen_bark", synthesizedTipPrimitive="bryophyte_moss_pad", barkType="mossy_deadwood".
-- Flor esférica de burbujas iridiscentes → stemStructure="herbaceous_curved_stalk", canopyElement="spherical_bubble_umbel", synthesizedHeadTopology="spherical_umbel_rays", synthesizedTipPrimitive="iridescent_bubble", synthesizedBasalFoliage="long_grass_blades".`;
+- Usa las métricas de columnas detectadas ("columnasRamaMax", "tieneHuecosMultiRama"): si hay ≥2 columnas separadas, elige un esqueleto ramificado real (NO un cilindro macizo).
+- Ejemplos Few-Shot de mapeo exacto:
+  1. Pino / Conífera / Bonsái de pino → stemStructure="gnarled_bonsai" o "sympodial_tree", canopyElement="conifer_needle_brushes", surfaceElement="rhomboid_pinecone_scales", barkType="pine_plates", tonalMode="natural_botanical".
+  2. Cactus columnar / Saguaro con brazos → stemStructure="segmented_siphon_tubes" o "thorny_horn_crown", canopyElement="thorn_spur_clusters", surfaceElement="cactus_areole_spine_bursts", barkType="cactus_ribs", tonalMode="veined_vascular_rib".
+  3. Orquídea punteada / Phalaenopsis → stemStructure="herbaceous_curved_stalk", canopyElement="spotted_orchid_labellum_corolla", tonalMode="spotted_orchid_mottled", petalOpenness=0.82.
+  4. Caladium / Alocasia acorazonada neón → stemStructure="herbaceous_curved_stalk", canopyElement="caladium_heart_leaf_cluster", tonalMode="caladium_neon_vein".
+  5. Protea Rey / Flor de brácteas → stemStructure="herbaceous_curved_stalk", canopyElement="king_protea_crown", tonalMode="picotee_rimmed_petal", petalOpenness=0.68.
+  6. Seta / Hongo luminoso o con velo → stemStructure="multi_stalk_umbel_colony", canopyElement="lacy_veil_spiked_mushroom" o "custom_fungi_cap", tonalMode="freckled_polka_spots" o "nebula_biolum_crystal".
+  7. Tronco retorcido con musgo sin hojas planas → stemStructure="serpentine_mossy_deadwood", canopyElement="moss_velvet_mantle", surfaceElement="moss_lichen_bark", synthesizedTipPrimitive="bryophyte_moss_pad", barkType="mossy_deadwood".
+  8. Flor esférica de burbujas iridiscentes → stemStructure="herbaceous_curved_stalk", canopyElement="spherical_bubble_umbel", synthesizedHeadTopology="spherical_umbel_rays", synthesizedTipPrimitive="iridescent_bubble", synthesizedBasalFoliage="long_grass_blades".`;
 
 const PLANT_DESIGN_SCHEMA = {
   type: Type.OBJECT,
@@ -752,6 +764,67 @@ function sanitizeAiPayload(raw: any, visionFeatures?: any) {
     }
   }
 
+  // ── GEOMETRIC SELF-VALIDATION: Catch clear botanical mismatches between AI text & enum ──
+  const mentionsConiferPine =
+    combinedAiText.includes('pino') ||
+    combinedAiText.includes('pine') ||
+    combinedAiText.includes('conífer') ||
+    combinedAiText.includes('conifer') ||
+    combinedAiText.includes('abeto') ||
+    combinedAiText.includes('cedro') ||
+    combinedAiText.includes('cipr');
+  const mentionsCactus =
+    combinedAiText.includes('cactus') ||
+    combinedAiText.includes('saguaro') ||
+    combinedAiText.includes('cactác') ||
+    combinedAiText.includes('cactac') ||
+    combinedAiText.includes('nopal') ||
+    combinedAiText.includes('espinoso columnar');
+  const mentionsCaladium =
+    combinedAiText.includes('caladium') ||
+    combinedAiText.includes('alocasia') ||
+    combinedAiText.includes('corazón de jesús') ||
+    combinedAiText.includes('oreja de elefante');
+  const mentionsProtea =
+    combinedAiText.includes('protea') || combinedAiText.includes('king protea');
+  const mentionsOrchid =
+    combinedAiText.includes('orquídea') ||
+    combinedAiText.includes('orquidea') ||
+    combinedAiText.includes('orchid') ||
+    combinedAiText.includes('phalaenopsis');
+  const mentionsMushroom =
+    combinedAiText.includes('seta') ||
+    combinedAiText.includes('hongo') ||
+    combinedAiText.includes('mushroom') ||
+    combinedAiText.includes('amanita') ||
+    combinedAiText.includes('fungi') ||
+    combinedAiText.includes('micelio');
+
+  const isGenericCanopyChoice =
+    canopyElement === 'custom_leaf_lamina' ||
+    canopyElement === 'custom_flower_corolla' ||
+    canopyElement === 'cloud_bonsai_pads';
+
+  if (mentionsConiferPine && isGenericCanopyChoice) {
+    canopyElement = 'conifer_needle_brushes';
+  } else if (mentionsCactus && (isGenericCanopyChoice || canopyElement === 'succulent_fleshy_rosettes')) {
+    canopyElement = 'thorn_spur_clusters';
+    if (!hasValidStem || stemStructure === 'gnarled_bonsai') {
+      stemStructure = 'segmented_siphon_tubes';
+    }
+  } else if (mentionsCaladium && isGenericCanopyChoice) {
+    canopyElement = 'caladium_heart_leaf_cluster';
+  } else if (mentionsProtea && (isGenericCanopyChoice || canopyElement === 'radiating_floret_head')) {
+    canopyElement = 'king_protea_crown';
+  } else if (mentionsOrchid && isGenericCanopyChoice) {
+    canopyElement = 'spotted_orchid_labellum_corolla';
+  } else if (mentionsMushroom && isGenericCanopyChoice) {
+    canopyElement = 'custom_fungi_cap';
+    if (!hasValidStem || stemStructure === 'gnarled_bonsai') {
+      stemStructure = 'multi_stalk_umbel_colony';
+    }
+  }
+
   const synthesizedHeadTopology = pickEnum<string>(
     ce.synthesizedHeadTopology,
     VALID_SYNTH_HEAD_TOPOLOGIES,
@@ -807,7 +880,9 @@ function sanitizeAiPayload(raw: any, visionFeatures?: any) {
   const surfaceElement = pickEnum<string>(
     ce.surfaceElement,
     VALID_SURFACE_ELEMENTS,
-    canopyElement === 'moss_velvet_mantle'
+    mentionsCactus
+      ? 'cactus_areole_spine_bursts'
+      : canopyElement === 'moss_velvet_mantle'
       ? 'moss_lichen_bark'
       : stemStructure === 'strangler_root_cage'
       ? 'strangler_root_web'
@@ -1082,7 +1157,11 @@ function sanitizeAiPayload(raw: any, visionFeatures?: any) {
     barkType: pickEnum(
       p.barkType,
       VALID_BARK_TYPES,
-      canopyElement === 'moss_velvet_mantle' || stemStructure === 'serpentine_mossy_deadwood'
+      mentionsCactus
+        ? 'cactus_ribs'
+        : mentionsConiferPine
+        ? 'pine_plates'
+        : canopyElement === 'moss_velvet_mantle' || stemStructure === 'serpentine_mossy_deadwood'
         ? 'mossy_deadwood'
         : stemStructure === 'strangler_root_cage' || surfaceElement === 'strangler_root_web'
         ? 'strangler_vine_lattice'
@@ -1694,6 +1773,121 @@ function buildVisionFallbackPayload(visionFeatures: any, userNotes?: string) {
     const upperCol = vf.colorUpper || vf.colorLeafTip || vf.colorFlower || '#ec4899';
     const lowerCol = vf.colorLower || vf.colorTrunk || '#2e5c24';
 
+    // 0. PRIORITY MULTI-BRANCH BONSAI / CAUDEX SUCCULENT TREE / MAPLE / PINE (when detectedArchetype === 'gnarled_bonsai_cloud')
+    if (
+      archetype === 'gnarled_bonsai_cloud' ||
+      (Number(vf.maxBranchColumns || 1) >= 3 && Boolean(vf.hasMultiBranchGaps) && ar >= 1.1)
+    ) {
+      // Check if upper pixels are pastel lavender/rose succulent rosettes on a thick caudex (low stemTopFrac, high capIsl, low warmOrange)
+      const isSucculentCaudexTree =
+        Number(vf.stemTopFrac ?? 0.28) <= 0.22 &&
+        capIsl >= 3.2 &&
+        Number(vf.warmOrangeRatio ?? 0) < 0.14 &&
+        vf.dominantHueCategory !== 'green';
+
+      if (isSucculentCaudexTree) {
+        return buildFromSpec({
+          name: 'Árbol Caudex Suculento de Rosetas Lavanda',
+          sci: 'Graptopetalum caudiciforme',
+          summary:
+            'Tronco caudex leñoso grueso ramificado en brazos coronados por rosetas suculentas carnosas en tonos lavanda/pastel.',
+          base: 'desert_dunes',
+          bg: darkBg ? 'dark_studio' : 'daylight_arch',
+          stem: 'caudex_rosette_branch_tree',
+          canopy: 'succulent_fleshy_rosettes',
+          surface: 'fleshy_tubercles_warts',
+          hanging: 'none',
+          bark: 'cork_oak_quercus',
+          tonal: 'velvet_spore_dust',
+          stemCount: 6,
+          lobeCount: 12,
+          petalOpenness: 0.76,
+          h: 4.4,
+          r: 0.42,
+          leafScale: 1.18,
+          colTrunk: vf.colorTrunk || '#8c6d53',
+          colMain: vf.colorLeafMain || '#9d7ea8',
+          colTip: vf.colorLeafTip || '#d8bfd8',
+          colFlower: vf.colorFlower || '#b388eb',
+          colAccent: vf.colorAccent || '#f3e8ff',
+        });
+      }
+
+      if (vf.dominantHueCategory === 'green' && spiky >= 0.34) {
+        return buildFromSpec({
+          name: 'Bonsái de Pino / Enebro sobre Roca',
+          sci: 'Juniperus chinensis bonsai',
+          summary:
+            'Tronco bonsái retorcido en S sobre base rocosa con ramas escalonadas y escobillas de acículas verdes.',
+          base: 'alpine_granite',
+          bg: darkBg ? 'dark_studio' : 'daylight_arch',
+          stem: 'ebony_fluted_bonsai_arch',
+          canopy: 'conifer_needle_brushes',
+          surface: 'moss_lichen_bark',
+          hanging: 'none',
+          bark: 'gnarled_olive_burl',
+          tonal: 'natural_botanical',
+          h: 4.8,
+          r: 0.36,
+          leafScale: 1.15,
+          colTrunk: vf.colorTrunk || '#3b3530',
+          colMain: vf.colorLeafMain || '#384e17',
+          colTip: vf.colorLeafTip || '#759543',
+          colFlower: vf.colorFlower || '#4d7c0f',
+          colAccent: vf.colorAccent || '#9fbf65',
+        });
+      }
+
+      if (Number(vf.warmOrangeRatio ?? 0) >= 0.22 && spiky >= 0.38) {
+        return buildFromSpec({
+          name: 'Bonsái de Arce Japonés Otoñal (Acer palmatum)',
+          sci: 'Acer palmatum autumnale',
+          summary:
+            'Bonsái de tronco sinuoso con ramificación horizontal en capas y hojas palmadas estrelladas en tonos otoñales.',
+          base: 'mossy_forest_floor',
+          bg: darkBg ? 'dark_studio' : 'daylight_arch',
+          stem: 'gnarled_bonsai',
+          canopy: 'palmate_maple_star_leaves',
+          surface: 'moss_lichen_bark',
+          hanging: 'none',
+          bark: 'fissured',
+          tonal: 'natural_botanical',
+          lobeCount: 7,
+          h: 4.8,
+          r: 0.32,
+          leafScale: 1.18,
+          colTrunk: vf.colorTrunk || '#5c4b3b',
+          colMain: vf.colorLeafMain || '#bc6126',
+          colTip: vf.colorLeafTip || '#dd8241',
+          colFlower: vf.colorFlower || '#a7510c',
+          colAccent: vf.colorAccent || '#ef9a5b',
+        });
+      }
+
+      return buildFromSpec({
+        name: 'Bonsái Escultural Acanalado Multi-Copa',
+        sci: 'Ebenus tortuosa bonsai',
+        summary:
+          'Tronco bonsái acanalado en S con ramas escalonadas y copas frondosas de hojas individuales en la paleta real de la foto.',
+        base: 'mossy_forest_floor',
+        bg: darkBg ? 'dark_studio' : 'daylight_arch',
+        stem: 'ebony_fluted_bonsai_arch',
+        canopy: 'cloud_bonsai_pads',
+        surface: 'smooth_striated',
+        hanging: 'none',
+        bark: 'fissured',
+        tonal: 'natural_botanical',
+        h: 5.2,
+        r: 0.38,
+        leafScale: 1.15,
+        colTrunk: vf.colorTrunk || lowerCol,
+        colMain: vf.colorLeafMain || upperCol,
+        colTip: vf.colorLeafTip || upperCol,
+        colFlower: vf.colorFlower || upperCol,
+        colAccent: vf.colorAccent || '#fbbf24',
+      });
+    }
+
     // 1. MULTI-CLUSTER SPHERICAL UMBEL / SLIME MOLD COLONY (e.g. yellow/cyan/orange beads on thin stalks)
     if (
       clusters >= 3 &&
@@ -1840,8 +2034,14 @@ function buildVisionFallbackPayload(visionFeatures: any, userNotes?: string) {
       });
     }
 
-    // 6. CRATER TENTACLE ANEMONE / STARFISH FUNGUS (very high radial spikiness + crater center + warm/crimson/violet)
-    if (spiky >= 0.36 && upW >= 0.50 && centerOpen >= 0.22) {
+    // 6. CRATER TENTACLE ANEMONE / STARFISH FUNGUS (very high radial spikiness + crater center; NEVER hijack bonsai or multi-branch trees!)
+    if (
+      archetype !== 'gnarled_bonsai_cloud' &&
+      !(Number(vf.maxBranchColumns || 1) >= 3 && Boolean(vf.hasMultiBranchGaps)) &&
+      spiky >= 0.36 &&
+      upW >= 0.50 &&
+      centerOpen >= 0.22
+    ) {
       return buildFromSpec({
         name: 'Anémona / Estrella de Tentáculos Radiales',
         sci: 'Aseroe tentaculata',
@@ -2151,6 +2351,7 @@ function buildVisionFallbackPayload(visionFeatures: any, userNotes?: string) {
 
   const isBudOrLotus =
     !isFungiUmbelColony &&
+    archetype !== 'gnarled_bonsai_cloud' &&
     (notes.includes('capullo') ||
       notes.includes('flor') ||
       notes.includes('loto') ||
@@ -2614,17 +2815,116 @@ function buildVisionFallbackPayload(visionFeatures: any, userNotes?: string) {
  * Extracts a JSON object from raw LLM text (useful for Ollama / LM Studio / Llama.cpp responses)
  */
 function extractJsonFromText(text: string): any {
-  const trimmed = text.trim();
-  try {
-    return JSON.parse(trimmed);
-  } catch {
-    const firstBrace = trimmed.indexOf('{');
-    const lastBrace = trimmed.lastIndexOf('}');
-    if (firstBrace !== -1 && lastBrace > firstBrace) {
-      return JSON.parse(trimmed.slice(firstBrace, lastBrace + 1));
+  const cleaned = text
+    .trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+
+  const tryParse = (candidate: string): any | null => {
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      return null;
     }
+  };
+
+  const direct = tryParse(cleaned);
+  if (direct) return direct;
+
+  const firstBrace = cleaned.indexOf('{');
+  if (firstBrace === -1) {
     throw new Error('La respuesta del modelo local no contenía JSON válido.');
   }
+
+  const lastBrace = cleaned.lastIndexOf('}');
+  let slice =
+    lastBrace > firstBrace ? cleaned.slice(firstBrace, lastBrace + 1) : cleaned.slice(firstBrace);
+
+  // Repair common small-VLM JSON quirks: trailing commas, unescaped newlines, missing closing braces
+  const repairJson = (s: string): string => {
+    let out = s
+      .replace(/,\s*([}\]])/g, '$1')
+      .replace(/[\u0000-\u0019]+/g, ' ');
+    // Balance unclosed braces/brackets if output was truncated
+    let openBraces = 0;
+    let openBrackets = 0;
+    let inStr = false;
+    let esc = false;
+    for (let i = 0; i < out.length; i++) {
+      const ch = out[i];
+      if (esc) {
+        esc = false;
+        continue;
+      }
+      if (ch === '\\') {
+        esc = true;
+        continue;
+      }
+      if (ch === '"') {
+        inStr = !inStr;
+        continue;
+      }
+      if (!inStr) {
+        if (ch === '{') openBraces++;
+        else if (ch === '}') openBraces--;
+        else if (ch === '[') openBrackets++;
+        else if (ch === ']') openBrackets--;
+      }
+    }
+    if (inStr) out += '"';
+    out = out.replace(/,\s*$/, '');
+    while (openBrackets > 0) {
+      out += ']';
+      openBrackets--;
+    }
+    while (openBraces > 0) {
+      out += '}';
+      openBraces--;
+    }
+    return out;
+  };
+
+  const parsedSlice = tryParse(slice) || tryParse(repairJson(slice));
+  if (parsedSlice) return parsedSlice;
+
+  // Last-resort regex field rescue for 3B local models with a broken quote/comma
+  const grabStr = (key: string): string | undefined => {
+    const m = slice.match(new RegExp(`"${key}"\\s*:\\s*"([^"]*)"`, 'i'));
+    return m ? m[1] : undefined;
+  };
+  const rescuedName = grabStr('identifiedName') || grabStr('name');
+  const rescuedStem = grabStr('stemStructure');
+  const rescuedCanopy = grabStr('canopyElement');
+  if (rescuedName || rescuedStem || rescuedCanopy) {
+    return {
+      identifiedName: rescuedName || 'Espécimen Ollama IA',
+      scientificName: grabStr('scientificName') || 'Botanica composita sp.',
+      reasoningSummary: grabStr('reasoningSummary') || 'Diseño botánico recuperado desde Ollama.',
+      recommendedBase: grabStr('recommendedBase') || 'mossy_forest_floor',
+      recommendedBg: grabStr('recommendedBg') || 'dark_studio',
+      customElement: {
+        name: rescuedName || 'Elemento Ollama IA',
+        stemStructure: rescuedStem,
+        canopyElement: rescuedCanopy,
+        surfaceElement: grabStr('surfaceElement'),
+        hangingElement: grabStr('hangingElement'),
+        synthesizedTipPrimitive: grabStr('synthesizedTipPrimitive'),
+        synthesizedBasalFoliage: grabStr('synthesizedBasalFoliage'),
+      },
+      params: {
+        barkType: grabStr('barkType'),
+        tonalMode: grabStr('tonalMode'),
+        colorTrunk: grabStr('colorTrunk'),
+        colorLeafMain: grabStr('colorLeafMain'),
+        colorLeafTip: grabStr('colorLeafTip'),
+        colorFlower: grabStr('colorFlower'),
+        colorAccent: grabStr('colorAccent'),
+      },
+    };
+  }
+
+  throw new Error('La respuesta del modelo local no contenía JSON válido.');
 }
 
 const LOCAL_JSON_PROMPT_TEMPLATE = `Devuelve EXCLUSIVAMENTE un objeto JSON válido (sin bloques markdown) con esta estructura exacta para diseñar la planta de la imagen en 3D (incluyendo síntesis de nuevas partes si no encaja en un árbol o capullo simple):
@@ -2636,8 +2936,8 @@ const LOCAL_JSON_PROMPT_TEMPLATE = `Devuelve EXCLUSIVAMENTE un objeto JSON váli
   "recommendedBg": "dark_studio",
   "customElement": {
     "name": "Nombre del elemento",
-    "stemStructure": "serpentine_mossy_deadwood | strangler_root_cage | baobab_pachycaul_bottle | mangrove_stilt_arch | dichotomous_dragon_tree | braided_helix_trunks | segmented_bamboo_equisetum | hollow_ancient_snag | creeping_rhizome_runners | scifi_tendril_cradle | herbaceous_curved_stalk | multi_stalk_umbel_colony | sympodial_tree | gnarled_bonsai | weeping_willow | thorny_horn_crown | spiral_volute_vine | rosette_cluster",
-    "canopyElement": "moss_velvet_mantle | scifi_biolum_plasma_globes | scifi_voronoi_ova_balloons | fenestrated_monstera_leaves | palmate_maple_star_leaves | pinnate_fern_palm_fronds | succulent_fleshy_rosettes | conifer_needle_brushes | lotus_magnolia_corolla_crown | passionflower_filament_corona | heliconia_bract_candelabra | dehiscent_seed_pods_coronas | carnivorous_nepenthes_pitchers | custom_spline_leaf_crown | spherical_bubble_umbel | radiating_floret_head | hanging_bell_cluster | crystal_prism_crown | procedural_lathe_head | custom_fungi_cap | custom_leaf_lamina | custom_flower_corolla | cloud_bonsai_pads | thorn_spur_clusters | stem_hugging_leaves",
+    "stemStructure": "ebony_fluted_bonsai_arch | caudex_rosette_branch_tree | serpentine_mossy_deadwood | strangler_root_cage | baobab_pachycaul_bottle | mangrove_stilt_arch | dichotomous_dragon_tree | braided_helix_trunks | segmented_bamboo_equisetum | hollow_ancient_snag | creeping_rhizome_runners | scifi_tendril_cradle | herbaceous_curved_stalk | multi_stalk_umbel_colony | sympodial_tree | gnarled_bonsai | weeping_willow | thorny_horn_crown | spiral_volute_vine | rosette_cluster",
+    "canopyElement": "caladium_heart_leaf_cluster | king_protea_crown | curled_horn_rosette | spiny_crater_dragon_orb | lacy_veil_spiked_mushroom | conical_floral_spike | spotted_orchid_labellum_corolla | succulent_fleshy_rosettes | conifer_needle_brushes | palmate_maple_star_leaves | fenestrated_monstera_leaves | pinnate_fern_palm_fronds | moss_velvet_mantle | scifi_biolum_plasma_globes | scifi_voronoi_ova_balloons | lotus_magnolia_corolla_crown | passionflower_filament_corona | heliconia_bract_candelabra | dehiscent_seed_pods_coronas | carnivorous_nepenthes_pitchers | custom_spline_leaf_crown | spherical_bubble_umbel | radiating_floret_head | hanging_bell_cluster | crystal_prism_crown | procedural_lathe_head | custom_fungi_cap | custom_leaf_lamina | custom_flower_corolla | cloud_bonsai_pads | thorn_spur_clusters | stem_hugging_leaves",
     "surfaceElement": "strangler_root_web | rose_hooked_prickles | cactus_areole_spine_bursts | armored_dragon_scales | shelf_fungi_conks | biolum_nodule_pustules | smooth_striated | moss_lichen_bark | braided_vines | curved_thorns_spines",
     "hangingElement": "aerial_root_curtains | winged_samara_seeds | tethered_scifi_lantern_globes | spanish_moss_epiphyte_drapes | thorny_barbed_whips | weeping_filaments | curling_tendrils | mycelial_fuzz | hanging_pods_berries | none",
     "synthesizedHeadTopology": "spherical_umbel_rays | layered_petal_starburst | hanging_bell_raceme | revolved_lathe_chalice | crystal_spire_cluster | spline_petal_corona | none",
@@ -2789,7 +3089,7 @@ async function startServer() {
         : '';
 
     const visionHint = visionFeatures
-      ? `\nAnálisis morfológico 2D de la imagen: arquetipoDetectado=${visionFeatures.detectedArchetype}, proporcionAltoAncho=${visionFeatures.aspectRatio}, perfilAnchuraSilueta=${JSON.stringify(visionFeatures.silhouetteRadii || [])}, colorSuperior=${visionFeatures.colorUpper || visionFeatures.colorLeafTip}, colorInferior=${visionFeatures.colorLower || visionFeatures.colorTrunk}, scoreIridiscencia=${visionFeatures.iridescentScore ?? 0}, talloVerdeBasal=${visionFeatures.hasGreenBasalStem ?? false}, tronco=${visionFeatures.colorTrunk}, colorPrincipal=${visionFeatures.colorLeafMain}, colorPunta=${visionFeatures.colorLeafTip}, colorFlor=${visionFeatures.colorFlower}, acento=${visionFeatures.colorAccent}.`
+      ? `\nAnálisis morfológico 2D de la imagen (Flood-Fill + Raycasting Multi-Intervalo): arquetipoDetectado=${visionFeatures.detectedArchetype}, proporcionAltoAncho=${visionFeatures.aspectRatio}, columnasRamaMax=${visionFeatures.maxBranchColumns ?? 1}, tieneHuecosMultiRama=${Boolean(visionFeatures.hasMultiBranchGaps)}, alturaFinTallo=${visionFeatures.stemTopFrac ?? 0.28}, perfilAnchuraSilueta=${JSON.stringify(visionFeatures.silhouetteRadii || [])}, colorSuperior=${visionFeatures.colorUpper || visionFeatures.colorLeafTip}, colorInferior=${visionFeatures.colorLower || visionFeatures.colorTrunk}, scoreIridiscencia=${visionFeatures.iridescentScore ?? 0}, talloVerdeBasal=${visionFeatures.hasGreenBasalStem ?? false}, tronco=${visionFeatures.colorTrunk}, colorPrincipal=${visionFeatures.colorLeafMain}, colorPunta=${visionFeatures.colorLeafTip}, colorFlor=${visionFeatures.colorFlower}, acento=${visionFeatures.colorAccent}.`
       : '';
 
     let customPartsContext = '';
@@ -2813,48 +3113,63 @@ async function startServer() {
 
     // Helper to query a local Ollama model (used explicitly or as auto-fallback when Cloud fails)
     const runOllamaVisionChat = async (ollamaBase: string, ollamaModel: string) => {
-      const compactLocalSystemPrompt = `Eres un diseñador botánico 3D. Analiza la imagen y devuelve SOLO JSON válido.\n${LOCAL_JSON_PROMPT_TEMPLATE}${customPartsContext}`;
-      const sendOllamaChat = async (withImage: boolean) => {
+      // Keep system prompt compact for local Ollama models so smaller context windows (4k-8k) never hit HTTP 400
+      const compactPartsForLocal =
+        Array.isArray(customParts) && customParts.length > 0
+          ? `\nPiezas clave disponibles: ${customParts
+              .slice(0, 12)
+              .map((p: any) => `${p?.name || 'Parte'}(${p?.element?.stemStructure || '-'}/${p?.element?.canopyElement || '-'})`)
+              .join(', ')}.`
+          : '';
+      const compactLocalSystemPrompt = `Eres un diseñador botánico 3D. Analiza la imagen y devuelve SOLO JSON válido.\n${LOCAL_JSON_PROMPT_TEMPLATE}${compactPartsForLocal}`;
+      const sendOllamaChat = async (withImage: boolean, useJsonFormat = true) => {
+        const bodyObj: any = {
+          model: ollamaModel,
+          stream: false,
+          options: { temperature, num_predict: 520, num_ctx: 4096 },
+          messages: [
+            { role: 'system', content: compactLocalSystemPrompt },
+            withImage
+              ? {
+                  role: 'user',
+                  content: `Describe la planta/árbol/estructura exacta de esta imagen y devuelve el JSON de configuración 3D.${visionHint}${notesBlock}`,
+                  images: [cleanBase64],
+                }
+              : {
+                  role: 'user',
+                  content: `Diseña en JSON 3D una planta/árbol acorde a estas mediciones y notas (el modelo actual es solo texto):${visionHint}${notesBlock}`,
+                },
+          ],
+        };
+        if (useJsonFormat) bodyObj.format = 'json';
         return fetch(`${ollamaBase}/api/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: ollamaModel,
-            stream: false,
-            format: 'json',
-            options: { temperature, num_predict: 700, num_ctx: 8192 },
-            messages: [
-              { role: 'system', content: compactLocalSystemPrompt },
-              withImage
-                ? {
-                    role: 'user',
-                    content: `Describe la planta/árbol/estructura exacta de esta imagen y devuelve el JSON de configuración 3D.${visionHint}${notesBlock}`,
-                    images: [cleanBase64],
-                  }
-                : {
-                    role: 'user',
-                    content: `Diseña en JSON 3D una planta/árbol acorde a estas mediciones y notas (el modelo actual es solo texto):${visionHint}${notesBlock}`,
-                  },
-            ],
-          }),
+          body: JSON.stringify(bodyObj),
           signal: AbortSignal.timeout(120000),
         });
       };
 
-      let ollamaRes = await sendOllamaChat(true);
+      let ollamaRes = await sendOllamaChat(true, true);
       let usedTextOnlyFallback = false;
 
       if (!ollamaRes.ok) {
         const errText = await ollamaRes.text().catch(() => '');
-        if (ollamaRes.status === 400 && errText.toLowerCase().includes('multimodal')) {
-          ollamaRes = await sendOllamaChat(false);
+        const lowerErr = errText.toLowerCase();
+        // Retry without format:'json' first if Ollama returned HTTP 400 (some vision models reject format:'json' with images)
+        if (ollamaRes.status === 400 && !lowerErr.includes('multimodal') && !lowerErr.includes('does not support image')) {
+          ollamaRes = await sendOllamaChat(true, false);
+        }
+        if (!ollamaRes.ok && ollamaRes.status === 400) {
+          // Fallback to text-only if the selected Ollama model does not support images
+          ollamaRes = await sendOllamaChat(false, true);
           usedTextOnlyFallback = true;
           if (!ollamaRes.ok) {
             const retryErr = await ollamaRes.text().catch(() => '');
-            throw new Error(`HTTP ${ollamaRes.status}: ${retryErr.slice(0, 120)}`);
+            throw new Error(`HTTP ${ollamaRes.status}: ${retryErr.slice(0, 140)}`);
           }
-        } else {
-          throw new Error(`HTTP ${ollamaRes.status}: ${errText.slice(0, 120)}`);
+        } else if (!ollamaRes.ok) {
+          throw new Error(`HTTP ${ollamaRes.status}: ${errText.slice(0, 140)}`);
         }
       }
 
@@ -3031,9 +3346,10 @@ async function startServer() {
     });
 
     const cloudModels = [
-      { id: 'gemini-2.5-flash', useThinking: true },
-      { id: 'gemini-2.0-flash', useThinking: false },
       { id: 'gemini-4-hydrogen', useThinking: true },
+      { id: 'gemini-2.5-flash', useThinking: true },
+      { id: 'gemini-2.5-flash-lite', useThinking: false },
+      { id: 'gemini-1.5-flash', useThinking: false },
     ];
     let lastErr: any = null;
     for (let attempt = 0; attempt < cloudModels.length; attempt++) {
@@ -3058,18 +3374,18 @@ async function startServer() {
                 },
               },
               {
-                text: `Analiza esta imagen paso a paso como arquitecto 3D de Arborea Studio Pro:
-1) Decide si reutilizas partes de la biblioteca (stemStructure, canopyElement, surfaceElement, hangingElement, synthesizedTipPrimitive, synthesizedBasalFoliage) o si debes crear una parte nueva esculpida mediante procedural_lathe_head (latheProfileRadii) o custom_spline_leaf_crown (petalContourProfile).
+                text: `Analiza esta imagen paso a paso como arquitecto 3D de Arborea Studio Pro. PRIORIDAD #1: MÁXIMO PARECIDO VISUAL CON LA IMAGEN ANTES QUE REUTILIZAR PARTES EXISTENTES:
+1) Si la forma de la imagen es única o no coincide fielmente (>85%) con una pieza de la biblioteca, CREA UNA PARTE NUEVA esculpida mediante procedural_lathe_head (trazando latheProfileRadii de base a cúspide) o custom_spline_leaf_crown (trazando petalContourProfile, petalCupping, petalTwistDeg, petalMarginWave). Solo reutiliza piezas existentes si ya calcan la silueta de la foto.
 2) Elige la textura de corteza (barkType), el shader multicolor/moteado exacto (tonalMode) y los 5 colores hex fieles a la imagen con patternScale y patternContrast adecuados.
-3) Define el montaje completo (height, radius, stemCount, lobeCount, petalOpenness, filamentCount) y explica en aiNewPartsReport qué piezas se reutilizan y cuáles son nuevas.${visionHint}${notesBlock}`,
+3) Define el montaje completo (height, radius, stemCount, lobeCount, petalOpenness, filamentCount) y explica en aiNewPartsReport qué piezas nuevas creaste para lograr el parecido y cuáles reutilizaste.${visionHint}${notesBlock}`,
               },
             ],
             config: genConfig,
           }),
           new Promise<never>((_, reject) =>
             setTimeout(
-              () => reject(new Error(`Timeout esperando respuesta de Cloud IA (${mCfg.id}, 18s)`)),
-              18000
+              () => reject(new Error(`Timeout esperando respuesta de Cloud IA (${mCfg.id}, 26s)`)),
+              26000
             )
           ),
         ]);
@@ -3083,11 +3399,12 @@ async function startServer() {
         }
       } catch (err: any) {
         lastErr = err;
+        const status = err?.status || 0;
         console.warn(
           `Intento ${attempt + 1} (${mCfg.id}) en /api/ai/design-plant:`,
-          err?.status || err?.message
+          status || err?.message
         );
-        await new Promise((r) => setTimeout(r, 250));
+        await new Promise((r) => setTimeout(r, status === 503 || status === 429 ? 1200 : 350));
       }
     }
 

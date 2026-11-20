@@ -27,7 +27,9 @@ import {
 import {
   loadSavedCustomSpecies,
   loadSavedPartsModules,
+  replaceSavedPartModules,
   PartModuleType,
+  SavedPartModule,
   saveCustomPartModule,
 } from './aiPlantDesigner';
 
@@ -47,6 +49,8 @@ export interface UnifiedPartEntry {
   id: string;
   name: string;
   category: UnifiedPartCategory;
+  /** Botanical subtype group (e.g. 'Flores y Corolas', 'Hongos y Setas', 'Bonsái y Escultóricos') */
+  subGroup?: string;
   source: UnifiedPartSource;
   sourceSpeciesName?: string;
   description: string;
@@ -84,6 +88,218 @@ function roundArray(arr?: number[]): number[] {
   return arr.slice(0, 8).map((n) => Number((Number(n) || 0).toFixed(2)));
 }
 
+/**
+ * Classifies any botanical part ID into a clean human-readable subtype group
+ * so libraries and pickers are always organized by type instead of 200+ jumbled cards.
+ */
+export function getPartSubGroup(category: UnifiedPartCategory, key: string): string {
+  if (category === 'canopy') {
+    if (
+      [
+        'lotus_magnolia_corolla_crown',
+        'passionflower_filament_corona',
+        'spotted_orchid_labellum_corolla',
+        'giant_arum_spathe_spadix',
+        'king_protea_crown',
+        'heliconia_bract_candelabra',
+        'conical_floral_spike',
+        'radiating_floret_head',
+        'hanging_bell_cluster',
+        'custom_flower_corolla',
+        'perforated_blossom_urn',
+      ].includes(key)
+    ) {
+      return '🌸 Flores y Corolas';
+    }
+    if (
+      [
+        'caladium_heart_leaf_cluster',
+        'fenestrated_monstera_leaves',
+        'palmate_maple_star_leaves',
+        'pinnate_fern_palm_fronds',
+        'conifer_needle_brushes',
+        'cloud_bonsai_pads',
+        'moss_velvet_mantle',
+        'custom_leaf_lamina',
+        'stem_hugging_leaves',
+      ].includes(key)
+    ) {
+      return '🍃 Hojas y Follaje';
+    }
+    if (
+      [
+        'succulent_fleshy_rosettes',
+        'curled_horn_rosette',
+        'spiny_crater_dragon_orb',
+        'thorn_spur_clusters',
+        'dehiscent_seed_pods_coronas',
+        'spiny_fenestrated_pods',
+      ].includes(key)
+    ) {
+      return '🌵 Suculentas, Rosetas y Cápsulas';
+    }
+    if (
+      [
+        'custom_fungi_cap',
+        'curled_witchhat_mushroom_cap',
+        'lacy_veil_spiked_mushroom',
+        'terraced_pagoda_caps',
+        'coral_clavaria_fingers',
+      ].includes(key)
+    ) {
+      return '🍄 Hongos, Setas y Corales';
+    }
+    if (
+      [
+        'toothed_venus_jaw_trap',
+        'carnivorous_nepenthes_pitchers',
+        'crater_tentacle_anemone',
+      ].includes(key)
+    ) {
+      return '🪲 Carnívoras y Anémonas';
+    }
+    return '✨ Sci-Fi, Umbelas y Esculpidas';
+  }
+
+  if (category === 'stem') {
+    if (
+      [
+        'ebony_fluted_bonsai_arch',
+        'gnarled_bonsai',
+        'serpentine_mossy_deadwood',
+        'braided_helix_trunks',
+        'spiral_volute_vine',
+      ].includes(key)
+    ) {
+      return '🎋 Bonsái y Escultóricos';
+    }
+    if (
+      [
+        'sympodial_tree',
+        'weeping_willow',
+        'baobab_pachycaul_bottle',
+        'mangrove_stilt_arch',
+        'strangler_root_cage',
+        'dichotomous_dragon_tree',
+        'hollow_ancient_snag',
+      ].includes(key)
+    ) {
+      return '🌳 Árboles y Raíces';
+    }
+    if (
+      [
+        'herbaceous_curved_stalk',
+        'multi_stalk_umbel_colony',
+        'swollen_ovary_calyx_stem',
+        'creeping_rhizome_runners',
+        'segmented_bamboo_equisetum',
+      ].includes(key)
+    ) {
+      return '🌱 Tallos Florales y Colonias';
+    }
+    return '🌵 Caudex, Acorazados y Sci-Fi';
+  }
+
+  if (category === 'tip') {
+    if (
+      [
+        'micro_floret_star',
+        'cupped_bell_calyx',
+        'iridescent_bubble',
+        'dewy_droplet',
+        'fuzzy_pom_floret_tuft',
+      ].includes(key)
+    ) {
+      return '🌸 Flores, Gotas y Burbujas';
+    }
+    if (
+      [
+        'granulated_berry_cluster',
+        'crowned_pomegranate_pod',
+        'winged_helicoid_seed',
+        'feathery_pappus_plume',
+        'spiked_seed_burr',
+        'spotted_spore_dome',
+      ].includes(key)
+    ) {
+      return '🍓 Frutos, Semillas y Esporas';
+    }
+    return '💎 Cristales, Púas y Sci-Fi';
+  }
+
+  if (category === 'shader') {
+    if (
+      [
+        'spotted_orchid_mottled',
+        'freckled_polka_spots',
+        'jaguar_rosette_mottled',
+        'dalmatian_ink_splatter',
+        'cosmic_speckled_dust',
+      ].includes(key)
+    ) {
+      return '🐆 Moteados y Lunares';
+    }
+    if (
+      [
+        'caladium_neon_vein',
+        'veined_vascular_rib',
+        'zebra_tiger_stripes',
+        'stained_glass_venation',
+        'striated_banded',
+      ].includes(key)
+    ) {
+      return '🦓 Venas, Rayas y Vitrales';
+    }
+    if (
+      [
+        'rainbow_umbel_spectrum',
+        'marbled_polychrome_swirl',
+        'picotee_rimmed_petal',
+        'chlorophyll_variegated',
+        'tri_tone_xenogradient',
+        'iridescent_dragon_scales',
+      ].includes(key)
+    ) {
+      return '🌈 Multicolor y Variegados';
+    }
+    return '🌌 Bioluminiscentes y Especiales';
+  }
+
+  if (category === 'surface') {
+    if (
+      ['curved_thorns_spines', 'rose_hooked_prickles', 'cactus_areole_spine_bursts'].includes(key)
+    ) {
+      return '🌵 Espinas y Aguijones';
+    }
+    if (['armored_dragon_scales', 'rhomboid_pinecone_scales', 'fleshy_tubercles_warts'].includes(key)) {
+      return '🛡️ Escamas y Tubérculos';
+    }
+    return '🌿 Lianas, Musgo y Nódulos';
+  }
+
+  if (category === 'hanging') {
+    if (['aerial_root_curtains', 'spanish_moss_epiphyte_drapes', 'mycelial_fuzz'].includes(key)) {
+      return '🌿 Raíces y Cortinas';
+    }
+    if (['hanging_pods_berries', 'winged_samara_seeds', 'tethered_scifi_lantern_globes'].includes(key)) {
+      return '🫐 Frutos, Semillas y Faroles';
+    }
+    return '➰ Filamentos, Zarcillos y Látigos';
+  }
+
+  if (category === 'bark') {
+    if (['scifi_biolum_veins', 'volcanic_magma_crust', 'eucalyptus_rainbow'].includes(key)) {
+      return '✨ Cortezas Exóticas y Biolum';
+    }
+    if (['armored_scale_bark', 'dragon_scales_cycad', 'cactus_ribs', 'palm_rings', 'bamboo_culm'].includes(key)) {
+      return '🛡️ Cortezas Escamosas y Anilladas';
+    }
+    return '🪵 Cortezas Naturales y Musgosas';
+  }
+
+  return '🌿 Rosetas y Brotes Basales';
+}
+
 export function computePartSignature(
   category: UnifiedPartCategory,
   el?: Partial<CustomBotanicalElement>,
@@ -91,17 +307,23 @@ export function computePartSignature(
 ): string {
   if (category === 'stem') {
     const s = el?.stemStructure || 'sympodial_tree';
-    const arms = el?.spiralArms ?? el?.stemCount ?? 0;
-    const bent = Number((el?.trunkBentS ?? 0.3).toFixed(1));
-    return `stem::${s}::a${arms}::b${bent}`;
+    return `stem::${s}`;
   }
   if (category === 'canopy') {
     const c = el?.canopyElement || 'custom_leaf_lamina';
     const topo = el?.synthesizedHeadTopology || 'none';
-    const lathe = c === 'procedural_lathe_head' || topo === 'revolved_lathe_chalice' ? roundArray(el?.latheProfileRadii).join(',') : '';
-    const spline = c === 'custom_spline_leaf_crown' || topo === 'spline_petal_corona' ? roundArray(el?.petalContourProfile).join(',') : '';
-    const cup = c === 'custom_spline_leaf_crown' ? `::cup${Number((el?.petalCupping ?? 0.38).toFixed(1))}::tw${Math.round(el?.petalTwistDeg ?? 14)}` : '';
-    return `canopy::${c}::${topo}::${lathe}::${spline}${cup}`;
+    if (
+      c === 'procedural_lathe_head' ||
+      c === 'custom_spline_leaf_crown' ||
+      topo === 'revolved_lathe_chalice' ||
+      topo === 'spline_petal_corona'
+    ) {
+      const lathe = roundArray(el?.latheProfileRadii).join(',');
+      const spline = roundArray(el?.petalContourProfile).join(',');
+      const cup = `::cup${Number((el?.petalCupping ?? 0.38).toFixed(1))}::tw${Math.round(el?.petalTwistDeg ?? 14)}`;
+      return `canopy::${c}::${topo}::${lathe}::${spline}${cup}`;
+    }
+    return `canopy::${c}`;
   }
   if (category === 'surface') {
     return `surface::${el?.surfaceElement || 'smooth_striated'}`;
@@ -347,101 +569,128 @@ export function getUnifiedPartsLibrary(): UnifiedPartEntry[] {
     };
     const spShort = sp.name.split('(')[0].trim();
 
-    // Extract species canopy variant with its exact parametric DNA & colors
-    const cSig = `sp::canopy::${el.canopyElement}::${sp.id}`;
-    entries.push({
-      id: `species::${sp.id}::canopy`,
-      name: `${el.name || cleanLabel(CANOPY_ELEMENT_META[el.canopyElement]?.label || el.canopyElement)}`,
-      category: 'canopy',
-      source: 'species_preset',
-      sourceSpeciesName: spShort,
-      description: `Extraída de "${spShort}": ${el.description || sp.description}`,
-      signature: cSig,
-      thumbKind: 'canopy',
-      thumbValue: el.canopyElement,
-      palette: pal,
-      customElementPatch: {
-        canopyElement: el.canopyElement,
-        synthesizedHeadTopology: el.synthesizedHeadTopology,
-        petalContourProfile: el.petalContourProfile,
-        latheProfileRadii: el.latheProfileRadii,
-        petalCupping: el.petalCupping,
-        petalTwistDeg: el.petalTwistDeg,
-        petalMarginWave: el.petalMarginWave,
-        petalOpenness: el.petalOpenness,
-        lobeCount: el.lobeCount,
-        cupDepth: el.cupDepth,
-        padLayers: el.padLayers,
-        umbelRayCount: el.umbelRayCount,
-        umbelSphereRatio: el.umbelSphereRatio,
-        tipBubbleScale: el.tipBubbleScale,
-        capDomeHeight: el.capDomeHeight,
-        capSpotDensity: el.capSpotDensity,
-        gillCount: el.gillCount,
-      },
-    });
-
-    // Extract species stem variant with its exact bend / arm / count DNA
-    entries.push({
-      id: `species::${sp.id}::stem`,
-      name: `Tallo de ${spShort}`,
-      category: 'stem',
-      source: 'species_preset',
-      sourceSpeciesName: spShort,
-      description: `${cleanLabel(STEM_STRUCTURE_META[el.stemStructure]?.label || el.stemStructure)} (hereda curvatura y brazos de ${spShort}).`,
-      signature: `sp::stem::${el.stemStructure}::${sp.id}`,
-      thumbKind: 'stem',
-      thumbValue: el.stemStructure,
-      palette: pal,
-      customElementPatch: {
-        stemStructure: el.stemStructure,
-        stemCount: el.stemCount,
-        spiralArms: el.spiralArms,
-        spiralTurns: el.spiralTurns,
-        trunkBentS: el.trunkBentS,
-        branchSpread: el.branchSpread,
-        branchDroop: el.branchDroop,
-      },
-    });
-
-    if (el.surfaceElement && el.surfaceElement !== 'smooth_striated') {
+    // Extract species canopy variant ONLY if its morphological signature is not already in the library (zero duplicates!)
+    const cSig = computePartSignature('canopy', el);
+    if (!seenSignatures.has(cSig)) {
+      seenSignatures.add(cSig);
       entries.push({
-        id: `species::${sp.id}::surface`,
-        name: `${cleanLabel(SURFACE_ELEMENT_META[el.surfaceElement]?.label || el.surfaceElement)} (${spShort})`,
-        category: 'surface',
+        id: `species::${sp.id}::canopy`,
+        name: `${el.name || cleanLabel(CANOPY_ELEMENT_META[el.canopyElement]?.label || el.canopyElement)}`,
+        category: 'canopy',
         source: 'species_preset',
         sourceSpeciesName: spShort,
-        description: `Corteza y superficie 3D de "${spShort}".`,
-        signature: `sp::surface::${el.surfaceElement}::${sp.id}`,
-        thumbKind: 'surface',
-        thumbValue: el.surfaceElement,
+        description: `Extraída de "${spShort}": ${el.description || sp.description}`,
+        signature: cSig,
+        thumbKind: 'canopy',
+        thumbValue: el.canopyElement,
         palette: pal,
         customElementPatch: {
-          surfaceElement: el.surfaceElement,
-          thornDensity: el.thornDensity,
-          thornLength: el.thornLength,
+          canopyElement: el.canopyElement,
+          synthesizedHeadTopology: el.synthesizedHeadTopology,
+          petalContourProfile: el.petalContourProfile,
+          latheProfileRadii: el.latheProfileRadii,
+          petalCupping: el.petalCupping,
+          petalTwistDeg: el.petalTwistDeg,
+          petalMarginWave: el.petalMarginWave,
+          petalOpenness: el.petalOpenness,
+          lobeCount: el.lobeCount,
+          cupDepth: el.cupDepth,
+          padLayers: el.padLayers,
+          umbelRayCount: el.umbelRayCount,
+          umbelSphereRatio: el.umbelSphereRatio,
+          tipBubbleScale: el.tipBubbleScale,
+          capDomeHeight: el.capDomeHeight,
+          capSpotDensity: el.capSpotDensity,
+          gillCount: el.gillCount,
         },
       });
     }
 
-    if (el.hangingElement && el.hangingElement !== 'none') {
+    // Extract species stem variant ONLY if unique (prevents duplicate "Tallo de Anémona" x4!)
+    const sSig = computePartSignature('stem', el);
+    if (!seenSignatures.has(sSig)) {
+      seenSignatures.add(sSig);
       entries.push({
-        id: `species::${sp.id}::hanging`,
-        name: `${cleanLabel(HANGING_ELEMENT_META[el.hangingElement]?.label || el.hangingElement)} (${spShort})`,
-        category: 'hanging',
+        id: `species::${sp.id}::stem`,
+        name: `Tallo de ${spShort}`,
+        category: 'stem',
         source: 'species_preset',
         sourceSpeciesName: spShort,
-        description: `Colgantes 3D de "${spShort}".`,
-        signature: `sp::hanging::${el.hangingElement}::${sp.id}`,
-        thumbKind: 'hanging',
-        thumbValue: el.hangingElement,
+        description: `${cleanLabel(STEM_STRUCTURE_META[el.stemStructure]?.label || el.stemStructure)} (hereda curvatura y brazos de ${spShort}).`,
+        signature: sSig,
+        thumbKind: 'stem',
+        thumbValue: el.stemStructure,
         palette: pal,
         customElementPatch: {
-          hangingElement: el.hangingElement,
-          filamentCount: el.filamentCount,
-          filamentLength: el.filamentLength,
+          stemStructure: el.stemStructure,
+          stemCount: el.stemCount,
+          spiralArms: el.spiralArms,
+          spiralTurns: el.spiralTurns,
+          trunkBentS: el.trunkBentS,
+          branchSpread: el.branchSpread,
+          branchDroop: el.branchDroop,
         },
       });
+    }
+
+    if (el.surfaceElement && el.surfaceElement !== 'smooth_striated') {
+      const surfSig = computePartSignature('surface', el);
+      if (!seenSignatures.has(surfSig)) {
+        seenSignatures.add(surfSig);
+        entries.push({
+          id: `species::${sp.id}::surface`,
+          name: `${cleanLabel(SURFACE_ELEMENT_META[el.surfaceElement]?.label || el.surfaceElement)} (${spShort})`,
+          category: 'surface',
+          source: 'species_preset',
+          sourceSpeciesName: spShort,
+          description: `Corteza y superficie 3D de "${spShort}".`,
+          signature: surfSig,
+          thumbKind: 'surface',
+          thumbValue: el.surfaceElement,
+          palette: pal,
+          customElementPatch: {
+            surfaceElement: el.surfaceElement,
+            thornDensity: el.thornDensity,
+            thornLength: el.thornLength,
+          },
+        });
+      }
+    }
+
+    if (el.hangingElement && el.hangingElement !== 'none') {
+      const hangSig = computePartSignature('hanging', el);
+      if (!seenSignatures.has(hangSig)) {
+        seenSignatures.add(hangSig);
+        entries.push({
+          id: `species::${sp.id}::hanging`,
+          name: `${cleanLabel(HANGING_ELEMENT_META[el.hangingElement]?.label || el.hangingElement)} (${spShort})`,
+          category: 'hanging',
+          source: 'species_preset',
+          sourceSpeciesName: spShort,
+          description: `Colgantes 3D de "${spShort}".`,
+          signature: hangSig,
+          thumbKind: 'hanging',
+          thumbValue: el.hangingElement,
+          palette: pal,
+          customElementPatch: {
+            hangingElement: el.hangingElement,
+            filamentCount: el.filamentCount,
+            filamentLength: el.filamentLength,
+          },
+        });
+      }
+    }
+  }
+
+  for (const e of entries) {
+    if (!e.subGroup) {
+      const key =
+        e.category === 'shader'
+          ? e.tonalMode || e.thumbValue
+          : e.category === 'bark'
+          ? e.barkType || e.thumbValue
+          : e.thumbValue;
+      e.subGroup = getPartSubGroup(e.category, key);
     }
   }
 
@@ -466,72 +715,97 @@ export function registerAiNovelPartsIfNew(
   const checkAndRegister = (
     cat: UnifiedPartCategory,
     modType: PartModuleType,
-    labelPrefix: string,
-    hasParametricNovelty: boolean
+    labelPrefix: string
   ) => {
     const sig = computePartSignature(cat, element, {
       barkType: params.barkType,
       tonalMode: params.tonalMode,
     });
+    // Strict deduplication: NEVER create a duplicate part if this signature already exists in native, species, or saved parts!
     const matched = existingLib.find((e) => e.signature === sig);
-    if (!matched || hasParametricNovelty) {
-      // Only avoid saving an identical custom saved part twice
-      const customAlreadyExists = existingLib.some(
-        (e) =>
-          (e.source === 'ai_generated' || e.source === 'user_saved') &&
-          e.category === cat &&
-          e.signature === sig
-      );
-      if (!customAlreadyExists && (hasParametricNovelty || !existingSigs.has(sig))) {
-        const partLabel = `${labelPrefix} (${plantName})`;
-        const savedEl: CustomBotanicalElement = {
-          ...element,
-          id: `elem_ai_${modType}_${Date.now()}_${Math.floor(Math.random() * 900)}`,
-          name: partLabel,
-          aiNewPartsReport:
-            element.aiNewPartsReport ||
-            `Parte ${cat} generada por IA a partir de "${plantName}" (firma: ${sig}).`,
-        };
-        saveCustomPartModule(partLabel, modType, savedEl);
-        newlySavedNames.push(partLabel);
-        return;
-      }
+    if (matched || existingSigs.has(sig)) {
+      if (matched) reusedNames.push(matched.name);
+      return;
     }
-    if (matched) {
-      reusedNames.push(matched.name);
-    }
+
+    const partLabel = `${labelPrefix} (${plantName})`;
+    const savedEl: CustomBotanicalElement = {
+      ...element,
+      id: `elem_ai_${modType}_${Date.now()}_${Math.floor(Math.random() * 900)}`,
+      name: partLabel,
+      aiNewPartsReport:
+        element.aiNewPartsReport ||
+        `Parte ${cat} generada por IA a partir de "${plantName}" (firma: ${sig}).`,
+    };
+    saveCustomPartModule(partLabel, modType, savedEl);
+    existingSigs.add(sig);
+    newlySavedNames.push(partLabel);
   };
 
-  const hasNovelCanopyShape =
-    (element.canopyElement === 'custom_spline_leaf_crown' &&
-      Array.isArray(element.petalContourProfile) &&
-      element.petalContourProfile.length >= 4) ||
-    (element.canopyElement === 'procedural_lathe_head' &&
-      Array.isArray(element.latheProfileRadii) &&
-      element.latheProfileRadii.length >= 4) ||
-    (!!element.synthesizedHeadTopology && element.synthesizedHeadTopology !== 'none');
-
-  checkAndRegister('canopy', 'canopy', 'Copa IA', hasNovelCanopyShape);
-  checkAndRegister(
-    'stem',
-    'stem',
-    'Tallo IA',
-    (element.stemCount ?? 0) > 1 || (element.trunkBentS ?? 0) > 0.5
-  );
+  checkAndRegister('canopy', 'canopy', 'Copa IA');
+  checkAndRegister('stem', 'stem', 'Tallo IA');
   if (element.surfaceElement && element.surfaceElement !== 'smooth_striated') {
-    checkAndRegister('surface', 'surface', 'Superficie IA', false);
+    checkAndRegister('surface', 'surface', 'Superficie IA');
   }
   if (element.hangingElement && element.hangingElement !== 'none') {
-    checkAndRegister('hanging', 'hanging', 'Colgante IA', false);
+    checkAndRegister('hanging', 'hanging', 'Colgante IA');
   }
   if (element.synthesizedTipPrimitive && element.synthesizedTipPrimitive !== 'none') {
-    checkAndRegister('tip', 'synthesizedTip', 'Punta IA', false);
+    checkAndRegister('tip', 'synthesizedTip', 'Punta IA');
   }
   if (element.synthesizedBasalFoliage && element.synthesizedBasalFoliage !== 'none') {
-    checkAndRegister('basal', 'basalFoliage', 'Base IA', false);
+    checkAndRegister('basal', 'basalFoliage', 'Base IA');
   }
 
   return { newlySavedNames, reusedNames };
+}
+
+/**
+ * Removes all duplicate saved part modules (both duplicates of native/species catalog parts
+ * and duplicate entries among user/AI saved modules), keeping only genuinely unique parts.
+ */
+export function deduplicateUnifiedPartsLibrary(): {
+  removedCount: number;
+  remaining: SavedPartModule[];
+} {
+  const saved = loadSavedPartsModules();
+  if (saved.length === 0) return { removedCount: 0, remaining: [] };
+
+  // Build baseline signature set of all native & catalog-species parts
+  const baselineSigs = new Set<string>();
+  const allLib = getUnifiedPartsLibrary();
+  for (const entry of allLib) {
+    if (entry.source !== 'ai_generated' && entry.source !== 'user_saved') {
+      baselineSigs.add(entry.signature);
+    }
+  }
+
+  const modTypeToCat: Record<PartModuleType, UnifiedPartCategory> = {
+    canopy: 'canopy',
+    stem: 'stem',
+    surface: 'surface',
+    hanging: 'hanging',
+    synthesizedTip: 'tip',
+    basalFoliage: 'basal',
+  };
+
+  const seenSavedSigs = new Set<string>();
+  const kept: SavedPartModule[] = [];
+  let removedCount = 0;
+
+  for (const mod of saved) {
+    const cat = modTypeToCat[mod.partType] || 'canopy';
+    const sig = computePartSignature(cat, mod.element);
+    if (baselineSigs.has(sig) || seenSavedSigs.has(sig)) {
+      removedCount++;
+    } else {
+      seenSavedSigs.add(sig);
+      kept.push(mod);
+    }
+  }
+
+  const remaining = replaceSavedPartModules(kept);
+  return { removedCount, remaining };
 }
 
 /**
@@ -541,6 +815,8 @@ export function registerAiNovelPartsIfNew(
 export function buildPartsLibraryPayloadForAI(limit = 32): Array<{
   name: string;
   category: UnifiedPartCategory;
+  /** Botanical subtype group (e.g. 'Flores y Corolas', 'Hongos y Setas', 'Bonsái y Escultóricos') */
+  subGroup?: string;
   source: UnifiedPartSource;
   sourceSpecies?: string;
   element: Partial<CustomBotanicalElement>;

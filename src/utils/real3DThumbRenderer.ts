@@ -361,13 +361,17 @@ export function renderReal3DPartThumbnail(
     accent?: string;
   }
 ): string | null {
-  const colT = colors?.trunk || '#583e2a';
+  const colT = colors?.trunk || '#7c5333';
   const colM = colors?.main || '#22c55e';
   const colTip = colors?.tip || '#86efac';
   const colF = colors?.flower || '#f472b6';
   const colA = colors?.accent || '#38bdf8';
 
-  const key = kind === 'tip' ? `part_tip_v7_${value}` : `part_${kind}_${value}_${colT}_${colM}_${colF}`;
+  // v9 cache key: renders ONLY the isolated anatomical part in macro 3D (never the full tree!)
+  const key =
+    kind === 'tip'
+      ? `part_tip_v7_${value}`
+      : `part_iso_v9_${kind}_${value}_${colT}_${colM}_${colF}`;
   const cached = getCachedReal3DThumb(key);
   if (cached) return cached;
 
@@ -388,11 +392,13 @@ export function renderReal3DPartThumbnail(
     scientificName: 'Botanica modularis',
     description: '',
     createdAt: 0,
-    stemStructure: (kind === 'stem' ? value : 'sympodial_tree') as StemStructureType,
+    stemStructure: (kind === 'stem'
+      ? value
+      : kind === 'surface'
+      ? 'baobab_pachycaul_bottle'
+      : 'herbaceous_curved_stalk') as StemStructureType,
     canopyElement: (kind === 'canopy'
       ? value
-      : kind === 'stem' || kind === 'bark'
-      ? 'custom_leaf_lamina'
       : 'custom_leaf_lamina') as CanopyElementType,
     surfaceElement: (kind === 'surface' ? value : 'smooth_striated') as SurfaceElementType,
     hangingElement: (kind === 'hanging' ? value : 'none') as HangingElementType,
@@ -400,51 +406,24 @@ export function renderReal3DPartThumbnail(
     synthesizedBasalFoliage: (kind === 'basal' ? value : 'none') as SynthesizedBasalFoliageType,
     spiralTurns: 1.35,
     spiralArms: 5,
-    stemCount: kind === 'stem' && value === 'herbaceous_curved_stalk' ? 1 : 5,
-    thornDensity: kind === 'surface' || kind === 'hanging' ? 0.75 : 0.1,
-    thornLength: 1.0,
-    filamentCount: kind === 'hanging' ? 20 : 6,
-    filamentLength: 1.2,
+    stemCount:
+      kind === 'stem'
+        ? value === 'herbaceous_curved_stalk'
+          ? 1
+          : 5
+        : 1,
+    thornDensity: kind === 'surface' ? 0.92 : kind === 'hanging' ? 0.5 : 0.0,
+    thornLength: kind === 'surface' ? 1.35 : 0.8,
+    filamentCount: kind === 'hanging' ? 28 : 0,
+    filamentLength: 1.5,
     padLayers: 5,
     lobeCount: 6,
     cupDepth: 0.45,
   };
 
-  if (
-    kind === 'canopy' &&
-    [
-      'spherical_bubble_umbel',
-      'radiating_floret_head',
-      'lotus_magnolia_corolla_crown',
-      'passionflower_filament_corona',
-      'spotted_orchid_labellum_corolla',
-      'giant_arum_spathe_spadix',
-      'toothed_venus_jaw_trap',
-      'crater_tentacle_anemone',
-      'perforated_blossom_urn',
-      'caladium_heart_leaf_cluster',
-      'king_protea_crown',
-      'curled_horn_rosette',
-      'spiny_crater_dragon_orb',
-      'lacy_veil_spiked_mushroom',
-      'conical_floral_spike',
-      'curled_witchhat_mushroom_cap',
-    ].includes(value)
-  ) {
-    baseCustom.stemStructure = 'herbaceous_curved_stalk';
-    baseCustom.stemCount = 1;
-  }
-  if (kind === 'basal') {
-    baseCustom.stemStructure = 'herbaceous_curved_stalk';
-    baseCustom.stemCount = 1;
-    baseCustom.canopyElement = 'radiating_floret_head';
-    baseCustom.synthesizedBasalFoliage = value as SynthesizedBasalFoliageType;
-  }
   if (kind === 'hanging') {
     baseCustom.stemStructure = 'gnarled_bonsai';
-    baseCustom.canopyElement = 'cloud_bonsai_pads';
-    baseCustom.filamentCount = 28;
-    baseCustom.filamentLength = 1.5;
+    baseCustom.canopyElement = 'custom_leaf_lamina';
   }
 
   const partParams: TreeParams = {
@@ -453,8 +432,28 @@ export function renderReal3DPartThumbnail(
     foliageType: kind === 'bark' ? 'none' : 'ai_custom_element',
     barkType: (kind === 'bark' ? value : 'fissured') as BarkType,
     representationStyle: 'botanical_leaves',
-    height: kind === 'bark' ? 4.2 : 4.6,
-    radius: kind === 'bark' ? 0.55 : 0.34,
+    height:
+      kind === 'canopy'
+        ? 2.4
+        : kind === 'surface'
+        ? 2.6
+        : kind === 'basal'
+        ? 1.8
+        : kind === 'bark'
+        ? 3.6
+        : 4.4,
+    radius:
+      kind === 'surface'
+        ? 0.48
+        : kind === 'bark'
+        ? 0.55
+        : kind === 'canopy'
+        ? 0.22
+        : 0.36,
+    leafScale:
+      kind === 'surface' || kind === 'basal' || kind === 'hanging'
+        ? 0.01
+        : 1.15,
     branchCount: kind === 'bark' ? 2 : 4,
     levels: kind === 'bark' ? 2 : 3,
     showRoots: kind === 'stem',
@@ -466,16 +465,29 @@ export function renderReal3DPartThumbnail(
     customElement: baseCustom,
   };
 
-  const focus: 'full' | 'crown' | 'trunk' | 'base' =
-    kind === 'canopy'
-      ? 'crown'
-      : kind === 'bark' || kind === 'surface'
-      ? 'trunk'
-      : kind === 'basal'
-      ? 'base'
-      : 'full';
+  // Build the 3D group and strip non-target meshes so ONLY the specific part is shown in macro!
+  const windUniform = { value: 0 };
+  const res = generateProceduralTree(partParams, THUMB_QUALITY, windUniform, 1);
+  const isoGroup = res.group;
 
-  return renderReal3DThumbnail(key, partParams, '#090f18', focus);
+  const trunkChild = isoGroup.getObjectByName('Trunk_And_Branches') as THREE.Mesh | undefined;
+  const foliageChild = isoGroup.getObjectByName('Foliage_And_Canopy') as THREE.Mesh | undefined;
+
+  if ((kind === 'stem' || kind === 'bark') && foliageChild) {
+    // For Stem / Bark thumbnails: remove ALL foliage/flowers/caps so ONLY the bare 3D trunk/stems show!
+    isoGroup.remove(foliageChild);
+    foliageChild.geometry?.dispose();
+  } else if (kind === 'canopy' && trunkChild && foliageChild) {
+    // For Canopy / Flower thumbnails: remove the trunk/stalk so the camera frames ONLY the isolated 3D flower/canopy in macro!
+    isoGroup.remove(trunkChild);
+    trunkChild.geometry?.dispose();
+  } else if (kind === 'basal' && trunkChild && foliageChild) {
+    // For Basal Foliage thumbnails: remove the main trunk so ONLY the basal rosette/ferns/grass blades frame in macro!
+    isoGroup.remove(trunkChild);
+    trunkChild.geometry?.dispose();
+  }
+
+  return renderIsolatedGroupThumbnail(key, isoGroup, '#090f18');
 }
 
 type PartQueueJob = {

@@ -24,6 +24,8 @@ interface TreeViewportProps {
   quality: QualitySettings;
   onStatsUpdate: (stats: MeshStats) => void;
   onPartClick?: (part: ViewportHitPart) => void;
+  selectedPart?: ViewportHitPart | null;
+  onBackgroundClick?: () => void;
 }
 
 const _targetCamPos = new THREE.Vector3();
@@ -149,16 +151,19 @@ function createHumanScaleReference(): THREE.Group {
 }
 
 export const TreeViewport = forwardRef<TreeViewportHandle, TreeViewportProps>(
-  ({ params, quality, onStatsUpdate, onPartClick }, ref) => {
+  ({ params, quality, onStatsUpdate, onPartClick, selectedPart, onBackgroundClick }, ref) => {
     const mountRef = useRef<HTMLDivElement>(null);
     const onPartClickRef = useRef(onPartClick);
     onPartClickRef.current = onPartClick;
+    const onBackgroundClickRef = useRef(onBackgroundClick);
+    onBackgroundClickRef.current = onBackgroundClick;
 
     const sceneRef = useRef<THREE.Scene | null>(null);
     const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
     const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
     const controlsRef = useRef<OrbitControls | null>(null);
     const treeGroupRef = useRef<THREE.Group | null>(null);
+    const selectionOutlineGroupRef = useRef<THREE.Group | null>(null);
     const dirLightRef = useRef<THREE.DirectionalLight | null>(null);
     const gridGroupRef = useRef<THREE.Group | null>(null);
     const ecosystemBaseGroupRef = useRef<THREE.Group | null>(null);
@@ -615,7 +620,10 @@ export const TreeViewport = forwardRef<TreeViewportHandle, TreeViewportProps>(
         if (targets.length === 0) return;
 
         const hits = raycaster.intersectObjects(targets, true);
-        if (hits.length === 0) return;
+        if (hits.length === 0) {
+          onBackgroundClickRef.current?.();
+          return;
+        }
 
         const hit = hits[0];
         let isBaseHit = false;
@@ -847,6 +855,143 @@ export const TreeViewport = forwardRef<TreeViewportHandle, TreeViewportProps>(
 
       onStatsUpdate(stats);
     }, [params, quality, onStatsUpdate]);
+
+    // Red 3D Selection Contour Outline around the currently selected plant part
+    useEffect(() => {
+      const scene = sceneRef.current;
+      if (!scene) return;
+
+      if (!selectionOutlineGroupRef.current) {
+        const g = new THREE.Group();
+        g.name = 'Selection_Red_Outline_Group';
+        selectionOutlineGroupRef.current = g;
+        scene.add(g);
+      }
+
+      const outlineGroup = selectionOutlineGroupRef.current;
+      while (outlineGroup.children.length > 0) {
+        const ch = outlineGroup.children[0];
+        outlineGroup.remove(ch);
+        if (ch instanceof THREE.Mesh) {
+          if (Array.isArray(ch.material)) {
+            ch.material.forEach((m) => m.dispose());
+          } else {
+            ch.material?.dispose();
+          }
+        }
+      }
+
+      if (!selectedPart) return;
+
+      const matchedMeshes: THREE.Mesh[] = [];
+      if (selectedPart === 'ecosystem_base') {
+        ecosystemBaseGroupRef.current?.traverse((obj) => {
+          if (obj instanceof THREE.Mesh && obj.visible) matchedMeshes.push(obj);
+        });
+      } else {
+        treeGroupRef.current?.traverse((obj) => {
+          if (!(obj instanceof THREE.Mesh) || !obj.visible) return;
+          if (selectedPart === 'canopy' && obj.name !== 'Trunk_And_Branches') {
+            matchedMeshes.push(obj);
+          } else if (
+            (selectedPart === 'trunk' || selectedPart === 'roots') &&
+            obj.name === 'Trunk_And_Branches'
+          ) {
+            matchedMeshes.push(obj);
+          }
+        });
+      }
+
+      if (matchedMeshes.length === 0) return;
+
+      const hNow = Math.max(1.5, treeBoundsRef.current.height || params.height || 4);
+      const outlineWidth = THREE.MathUtils.clamp(hNow * 0.0095, 0.014, 0.055);
+      const maxYCut = selectedPart === 'roots' ? Math.max(0.65, hNow * 0.24) : 9999.0;
+
+      matchedMeshes.forEach((srcMesh) => {
+        srcMesh.updateWorldMatrix(true, false);
+
+        // 1. Solid BackSide Red Silhouette Contour (expanded along normals)
+        const hullMat = new THREE.ShaderMaterial({
+          uniforms: {
+            uOutlineWidth: { value: outlineWidth },
+            uMaxY: { value: maxYCut },
+          },
+          vertexShader: `
+            uniform float uOutlineWidth;
+            varying float vWorldY;
+            void main() {
+              vec3 displaced = position + normalize(normal) * uOutlineWidth;
+              vec4 wp = modelMatrix * vec4(displaced, 1.0);
+              vWorldY = wp.y;
+              gl_Position = projectionMatrix * viewMatrix * wp;
+            }
+          `,
+          fragmentShader: `
+            uniform float uMaxY;
+            varying float vWorldY;
+            void main() {
+              if (vWorldY > uMaxY) discard;
+              gl_FragColor = vec4(1.0, 0.12, 0.22, 0.95);
+            }
+          `,
+          side: THREE.BackSide,
+          transparent: true,
+          depthWrite: false,
+        });
+
+        const hullMesh = new THREE.Mesh(srcMesh.geometry, hullMat);
+        hullMesh.applyMatrix4(srcMesh.matrixWorld);
+        hullMesh.renderOrder = 25;
+        hullMesh.raycast = () => {};
+        outlineGroup.add(hullMesh);
+
+        // 2. Crisp Red Fresnel Rim Glow (ensures thin double-sided petals/leaves show a bright red border)
+        const rimMat = new THREE.ShaderMaterial({
+          uniforms: {
+            uMaxY: { value: maxYCut },
+          },
+          vertexShader: `
+            varying vec3 vNormView;
+            varying vec3 vViewPos;
+            varying float vWorldY;
+            void main() {
+              vec4 wp = modelMatrix * vec4(position, 1.0);
+              vWorldY = wp.y;
+              vec4 mv = viewMatrix * wp;
+              vViewPos = -mv.xyz;
+              vNormView = normalize(normalMatrix * normal);
+              gl_Position = projectionMatrix * mv;
+            }
+          `,
+          fragmentShader: `
+            uniform float uMaxY;
+            varying vec3 vNormView;
+            varying vec3 vViewPos;
+            varying float vWorldY;
+            void main() {
+              if (vWorldY > uMaxY) discard;
+              float ndv = abs(dot(normalize(vNormView), normalize(vViewPos)));
+              float rim = pow(clamp(1.0 - ndv, 0.0, 1.0), 1.85);
+              if (rim < 0.22) discard;
+              gl_FragColor = vec4(1.0, 0.16, 0.26, clamp(rim * 1.15, 0.0, 0.92));
+            }
+          `,
+          side: THREE.DoubleSide,
+          transparent: true,
+          depthWrite: false,
+          polygonOffset: true,
+          polygonOffsetFactor: -1,
+          polygonOffsetUnits: -1,
+        });
+
+        const rimMesh = new THREE.Mesh(srcMesh.geometry, rimMat);
+        rimMesh.applyMatrix4(srcMesh.matrixWorld);
+        rimMesh.renderOrder = 26;
+        rimMesh.raycast = () => {};
+        outlineGroup.add(rimMesh);
+      });
+    }, [selectedPart, params, quality]);
 
     return <div ref={mountRef} className="w-full h-full relative overflow-hidden" />;
   }

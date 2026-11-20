@@ -3,6 +3,7 @@ import {
   TreeParams,
   PolygonLOD,
   CustomBotanicalElement,
+  PhotoSculptBlueprint,
 } from '../types/botany';
 import {
   ensureStandardAttributes,
@@ -62,8 +63,10 @@ function resolveStemColor(hex: string, isHerbaceous: boolean, isMossyWoodTrunk =
     }
     return '#' + c.getHexString();
   }
-  if (hsl.s < 0.16) {
-    c.setHSL(0.07, 0.34, THREE.MathUtils.clamp(hsl.l * 0.65, 0.14, 0.32));
+  // Preserve true dark ebony/charcoal bark (l < 0.24) and pale birch bark (l > 0.72)!
+  // Only warm up mid-tone washed-out greys (0.24 <= l <= 0.65) into natural wood brown.
+  if (hsl.s < 0.12 && hsl.l >= 0.24 && hsl.l <= 0.65) {
+    c.setHSL(0.07, 0.32, THREE.MathUtils.clamp(hsl.l * 0.65, 0.16, 0.32));
   }
   return '#' + c.getHexString();
 }
@@ -984,10 +987,15 @@ function buildSculptedCloudCushionCore(
   detailLevel: number,
   rand: () => number
 ): THREE.BufferGeometry {
-  const detail = detailLevel >= 1.1 ? 3 : 2;
-  const geo = new THREE.IcosahedronGeometry(1.0, detail);
+  // Use indexed SphereGeometry (NOT non-indexed IcosahedronGeometry) so computeVertexNormals() produces smooth organic shading!
+  const wSegs = detailLevel >= 1.1 ? 26 : 18;
+  const hSegs = detailLevel >= 1.1 ? 18 : 12;
+  const geo = new THREE.SphereGeometry(1.0, wSegs, hSegs);
   const pos = geo.attributes.position;
   const seedPhase = rand() * Math.PI * 2;
+
+  // Guarantee fluffy proportional height so bonsai cloud cushions never flatten into thin pancakes
+  const effHeightY = Math.max(Math.max(radiusX, radiusZ) * 0.44, heightY);
 
   for (let i = 0; i < pos.count; i++) {
     let x = pos.getX(i);
@@ -1002,11 +1010,11 @@ function buildSculptedCloudCushionCore(
       0.1 * Math.cos(theta * 3 - seedPhase * 0.7) +
       0.08 * Math.sin(y * 4.5 + theta * 2);
 
-    // Flatten the bottom slightly like a classic bonsai cloud pad, dome the top
-    const verticalScale = y < 0 ? heightY * 0.55 : heightY * 0.95;
+    // Gently sculpted bonsai cushion underside + full lush domed crown top
+    const verticalScale = y < 0 ? effHeightY * 0.62 : effHeightY * 1.05;
     x *= radiusX * lobeMod;
     z *= radiusZ * lobeMod;
-    y = y * verticalScale + heightY * 0.18;
+    y = y * verticalScale + effHeightY * 0.16;
 
     pos.setXYZ(i, x, y, z);
   }
@@ -2919,65 +2927,105 @@ function buildPalmateMapleStarCluster(
   rand: () => number
 ): THREE.BufferGeometry[] {
   const parts: THREE.BufferGeometry[] = [];
-  const leafCount = Math.max(6, Math.min(12, Math.round(8 * Math.min(1.3, densityMult))));
-  const fingerCount = Math.max(5, Math.min(9, (el.lobeCount || 5) | 1));
+  const fingerCount = Math.max(5, Math.min(7, (el.lobeCount || 5) | 1));
   const golden = 2.39996323;
 
-  const core = buildSculptedCloudCushionCore(
-    scale * 0.25,
-    scale * 0.18,
-    scale * 0.25,
-    colStem,
-    colMain,
-    colTip,
-    densityMult,
-    rand
-  );
-  parts.push(core);
+  // True Japanese Maple (Acer palmatum) layered horizontal spray:
+  // Zero solid blob core! Builds 6 spreading fine woody twigs carrying ~24 horizontal palmate star leaves.
+  const twigCount = 6;
+  const leavesPerTwig = Math.max(3, Math.round(4 * Math.min(1.25, densityMult)));
+  const sprayR = scale * 1.18;
 
-  for (let l = 0; l < leafCount; l++) {
-    const yaw = l * golden + (rand() - 0.5) * 0.2;
-    const tilt = 0.35 + (l / leafCount) * 0.72;
-    const petioleLen = scale * 0.28;
-    const palmLeafLen = scale * (0.58 + (1 - l / leafCount) * 0.22);
-
-    const petiole = buildSmoothCurveTube(
-      [new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, petioleLen, -petioleLen * 0.12)],
-      palmLeafLen * 0.04,
-      palmLeafLen * 0.025,
-      4,
-      4,
-      colStem,
-      colMain,
-      rand,
-      0,
-      0,
-      false
+  for (let tw = 0; tw < twigCount; tw++) {
+    const twAng = (tw / twigCount) * Math.PI * 2 + (rand() - 0.5) * 0.32;
+    const twLen = sprayR * (0.58 + (tw % 2) * 0.34);
+    const twRise = scale * (0.08 + (tw % 3) * 0.14);
+    const tMid = new THREE.Vector3(
+      Math.cos(twAng) * twLen * 0.52,
+      twRise * 0.65,
+      Math.sin(twAng) * twLen * 0.52
     );
-    const mOrient = new THREE.Matrix4()
-      .makeRotationY(yaw)
-      .multiply(new THREE.Matrix4().makeRotationX(tilt));
-    petiole.applyMatrix4(mOrient);
-    parts.push(petiole);
+    const tEnd = new THREE.Vector3(
+      Math.cos(twAng) * twLen,
+      twRise,
+      Math.sin(twAng) * twLen
+    );
+    const twigCurve = new THREE.CatmullRomCurve3([new THREE.Vector3(0, 0, 0), tMid, tEnd]);
 
-    // Radiating palmate fingers from petiole apex
+    parts.push(
+      buildSmoothCurveTube(
+        [new THREE.Vector3(0, -scale * 0.04, 0), tMid, tEnd],
+        scale * 0.032,
+        scale * 0.011,
+        5,
+        4,
+        colStem,
+        colStem,
+        rand,
+        0,
+        0,
+        true
+      )
+    );
+
+    for (let l = 0; l < leavesPerTwig; l++) {
+      const kt = 0.32 + (l / Math.max(1, leavesPerTwig - 1)) * 0.68;
+      const anchor = twigCurve.getPointAt(kt);
+      const yaw = twAng + (l % 2 === 0 ? -0.68 : 0.68) + (rand() - 0.5) * 0.35 + l * 0.25;
+      // Horizontal / slightly cascading maple leaf posture (NOT pointing straight up like flames!)
+      const tilt = 1.15 + (rand() - 0.5) * 0.32 + kt * 0.24;
+      const palmLeafLen = scale * (0.32 + (1 - kt * 0.3) * 0.16);
+      const leafTipCol = (tw + l) % 3 === 0 ? colFlower : (tw + l) % 3 === 1 ? colTip : colMain;
+
+      const mOrient = new THREE.Matrix4()
+        .makeTranslation(anchor.x, anchor.y, anchor.z)
+        .multiply(new THREE.Matrix4().makeRotationY(yaw))
+        .multiply(new THREE.Matrix4().makeRotationX(tilt));
+
+      // Radiating palmate maple star fingers
+      for (let f = 0; f < fingerCount; f++) {
+        const fNorm = (f / (fingerCount - 1)) * 2 - 1;
+        const spreadAng = fNorm * 1.22;
+        const fingerScale = 1.0 - Math.abs(fNorm) * 0.42;
+        const finger = buildCustomContouredLeaf(
+          palmLeafLen * fingerScale,
+          0.34,
+          3,
+          0.18,
+          colMain,
+          leafTipCol,
+          rand
+        );
+        const mF = new THREE.Matrix4()
+          .makeRotationZ(spreadAng)
+          .multiply(new THREE.Matrix4().makeTranslation(0, palmLeafLen * 0.06, 0));
+        finger.applyMatrix4(mF);
+        finger.applyMatrix4(mOrient);
+        parts.push(finger);
+      }
+    }
+  }
+
+  // Crown apex rosette of 3 horizontal palmate leaves
+  for (let a = 0; a < 3; a++) {
+    const yaw = a * golden;
+    const mOrient = new THREE.Matrix4()
+      .makeTranslation(0, scale * 0.22, 0)
+      .multiply(new THREE.Matrix4().makeRotationY(yaw))
+      .multiply(new THREE.Matrix4().makeRotationX(1.18));
+    const palmLeafLen = scale * 0.34;
     for (let f = 0; f < fingerCount; f++) {
-      const fNorm = (f / (fingerCount - 1)) * 2 - 1; // -1 .. +1
-      const spreadAng = fNorm * 1.18;
-      const fingerScale = 1.0 - Math.abs(fNorm) * 0.38;
+      const fNorm = (f / (fingerCount - 1)) * 2 - 1;
       const finger = buildCustomContouredLeaf(
-        palmLeafLen * fingerScale,
-        0.38,
+        palmLeafLen * (1.0 - Math.abs(fNorm) * 0.42),
+        0.34,
         3,
-        0.22,
+        0.18,
         colMain,
-        l % 2 === 0 ? colTip : colFlower,
+        a % 2 === 0 ? colTip : colFlower,
         rand
       );
-      const mF = new THREE.Matrix4()
-        .makeTranslation(0, petioleLen, -petioleLen * 0.12)
-        .multiply(new THREE.Matrix4().makeRotationZ(spreadAng));
-      finger.applyMatrix4(mF);
+      finger.applyMatrix4(new THREE.Matrix4().makeRotationZ(fNorm * 1.22));
       finger.applyMatrix4(mOrient);
       parts.push(finger);
     }
@@ -3135,46 +3183,63 @@ function buildConiferNeedleBrushCluster(
   const parts: THREE.BufferGeometry[] = [];
   const golden = 2.39996323;
 
-  // Central woody shoot
-  const shootLen = scale * 0.95;
-  parts.push(
-    buildSmoothCurveTube(
-      [new THREE.Vector3(0, -shootLen * 0.1, 0), new THREE.Vector3(0, shootLen, 0)],
-      scale * 0.07,
-      scale * 0.025,
-      6,
-      5,
-      colStem,
-      colStem,
-      rand,
-      4,
-      0.1,
-      true
-    )
-  );
+  // 5 spreading conifer/juniper bonsai shoots fanning horizontally & upward (not just 1 vertical stick!)
+  const shootCount = 5;
+  const needlesPerShoot = Math.max(18, Math.round(24 * Math.min(1.3, densityMult)));
+  const shootLen = scale * 0.88;
 
-  // 36+ radial 3D needle fascicles
-  const needleCount = Math.max(24, Math.round(38 * Math.min(1.3, densityMult)));
-  for (let n = 0; n < needleCount; n++) {
-    const t = (n + 0.5) / needleCount;
-    const y = t * shootLen * 0.92;
-    const ang = n * golden;
-    const nLen = scale * (0.38 + (1 - t * 0.35) * 0.22);
-    const nDir = new THREE.Vector3(
-      Math.cos(ang) * 0.78,
-      0.48 + t * 0.35,
-      Math.sin(ang) * 0.78
-    ).normalize();
+  for (let sh = 0; sh < shootCount; sh++) {
+    const shAng = sh === 0 ? 0 : ((sh - 1) / (shootCount - 1)) * Math.PI * 2 + (rand() - 0.5) * 0.35;
+    const isCenter = sh === 0;
+    const shSpread = isCenter ? 0.08 : 0.72 + (sh % 2) * 0.22;
+    const shRise = isCenter ? 0.62 : 0.24 + (sh % 2) * 0.14;
+    const sEnd = new THREE.Vector3(
+      Math.cos(shAng) * shootLen * shSpread,
+      shootLen * shRise,
+      Math.sin(shAng) * shootLen * shSpread
+    );
+    const sMid = sEnd.clone().multiplyScalar(0.5);
+    sMid.y += shootLen * 0.06;
+    const sCurve = new THREE.CatmullRomCurve3([new THREE.Vector3(0, 0, 0), sMid, sEnd]);
 
-    const needle = new THREE.ConeGeometry(scale * 0.018, nLen, 4, 1);
-    needle.translate(0, nLen * 0.48, 0);
-    const qN = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), nDir);
-    const mN = new THREE.Matrix4().makeRotationFromQuaternion(qN);
-    mN.setPosition(0, y, 0);
-    needle.applyMatrix4(mN);
-    const nStd = ensureStandardAttributes(needle);
-    colorizeGeometryGradient(nStd, colMain, colTip, rand, 0.04);
-    parts.push(nStd);
+    parts.push(
+      buildSmoothCurveTube(
+        [new THREE.Vector3(0, -shootLen * 0.05, 0), sMid, sEnd],
+        scale * 0.045,
+        scale * 0.016,
+        5,
+        5,
+        colStem,
+        colStem,
+        rand,
+        3,
+        0.08,
+        true
+      )
+    );
+
+    // Dense radial 3D conifer/juniper needle fascicles along each fanning shoot
+    for (let n = 0; n < needlesPerShoot; n++) {
+      const t = 0.18 + (n / needlesPerShoot) * 0.82;
+      const pt = sCurve.getPointAt(t);
+      const ang = n * golden + sh * 1.1;
+      const nLen = scale * (0.28 + (1 - t * 0.3) * 0.24);
+      const nDir = new THREE.Vector3(
+        Math.cos(ang) * 0.82,
+        0.52 + (1 - t) * 0.25,
+        Math.sin(ang) * 0.82
+      ).normalize();
+
+      const needle = new THREE.ConeGeometry(scale * 0.028, nLen, 4, 1);
+      needle.translate(0, nLen * 0.48, 0);
+      const qN = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), nDir);
+      const mN = new THREE.Matrix4().makeRotationFromQuaternion(qN);
+      mN.setPosition(pt.x, pt.y, pt.z);
+      needle.applyMatrix4(mN);
+      const nStd = ensureStandardAttributes(needle);
+      colorizeGeometryGradient(nStd, colMain, n % 3 === 0 ? colTip : colMain, rand, 0.05);
+      parts.push(nStd);
+    }
   }
 
   // 2 Sculpted Woody Pine Cones hanging near the base of the brush
@@ -3665,52 +3730,88 @@ function buildConicalFloralSpike(
 ): THREE.BufferGeometry[] {
   const parts: THREE.BufferGeometry[] = [];
   const openness = THREE.MathUtils.clamp(el.petalOpenness ?? 0.58, 0, 1);
-  const layers = Math.max(6, Math.min(14, Math.round((el.padLayers || 8) * 1.15)));
-  const spikeH = scale * 1.45;
-  const maxR = scale * 0.46;
+  const layers = Math.max(8, Math.min(16, Math.round((el.padLayers || 10) * 1.25)));
+  const spikeH = scale * 1.65;
+  const maxR = scale * 0.48;
 
-  // Central rachis axis
+  // Solid central floral rachis core so zero gaps show through between overlapping scales
   parts.push(
     buildSmoothCurveTube(
-      [new THREE.Vector3(0, -spikeH * 0.08, 0), new THREE.Vector3(0, spikeH, 0)],
-      maxR * 0.22,
-      maxR * 0.05,
-      10,
-      6,
+      [new THREE.Vector3(0, -spikeH * 0.08, 0), new THREE.Vector3(0, spikeH * 0.96, 0)],
+      maxR * 0.34,
+      maxR * 0.06,
+      12,
+      8,
       colStem,
-      colMain,
+      colFlower,
       rand,
       4,
-      0.08,
+      0.06,
       true
     )
   );
 
   const golden = 2.39996323;
-  const bractCount = Math.max(18, Math.round(layers * 4.5 * Math.min(1.2, densityMult)));
-  for (let i = 0; i < bractCount; i++) {
-    const t = i / Math.max(1, bractCount - 1);
-    const y = t * spikeH * 0.94;
+  // Dense two-zone Kniphofia / Torch-Lily architecture:
+  // Lower 46%: tightly shingled cream/gold broader scales drooping slightly outward/downward like a pineapple bulb
+  // Upper 54%: tightly packed fiery orange/crimson tubular florets pointing upward into a blazing conical spire!
+  const totalFlorets = Math.max(52, Math.round(layers * 6.5 * Math.min(1.25, densityMult)));
+  for (let i = 0; i < totalFlorets; i++) {
+    const t = i / Math.max(1, totalFlorets - 1);
+    const y = t * spikeH * 0.96;
     const yaw = i * golden;
-    const envelope = Math.sin(t * Math.PI * 0.85 + 0.22) * (1 - t * 0.42);
-    const bLen = maxR * (0.48 + envelope * 0.72);
-    const tilt = THREE.MathUtils.lerp(0.28, 1.08, openness) + (1 - t) * 0.25;
-    const bract = buildSculptedCuppedPetal(
-      bLen,
-      bLen * 0.62,
-      bLen * 0.24,
-      bLen * THREE.MathUtils.lerp(-0.18, 0.16, openness),
-      colMain,
-      colFlower,
-      t > 0.72 ? colAccent : colTip,
-      rand
-    );
-    const m = new THREE.Matrix4()
-      .makeTranslation(0, y, 0)
-      .multiply(new THREE.Matrix4().makeRotationY(yaw))
-      .multiply(new THREE.Matrix4().makeRotationX(tilt));
-    bract.applyMatrix4(m);
-    parts.push(bract);
+    const isLowerScaleZone = t < 0.46;
+
+    if (isLowerScaleZone) {
+      // Broad overlapping cream/pale-gold imbricated scales forming a plump rounded lower bulb
+      const zoneT = t / 0.46;
+      const bulbEnv = Math.sin(zoneT * Math.PI * 0.85 + 0.25);
+      const bLen = maxR * (0.42 + bulbEnv * 0.48);
+      const bWidth = bLen * 0.78;
+      // Slightly downward-outward shingled pitch
+      const tilt = THREE.MathUtils.lerp(1.35, 1.85, 1 - zoneT) + (openness - 0.5) * 0.25;
+      const bract = buildSculptedCuppedPetal(
+        bLen,
+        bWidth,
+        bLen * 0.28,
+        -bLen * 0.14,
+        colTip,
+        colMain,
+        colTip,
+        rand
+      );
+      const radOffset = maxR * (0.14 + bulbEnv * 0.16);
+      const m = new THREE.Matrix4()
+        .makeTranslation(Math.cos(yaw) * radOffset, y, Math.sin(yaw) * radOffset)
+        .multiply(new THREE.Matrix4().makeRotationY(yaw))
+        .multiply(new THREE.Matrix4().makeRotationX(tilt));
+      bract.applyMatrix4(m);
+      parts.push(bract);
+    } else {
+      // Narrower fiery orange/scarlet tubular florets flaring outward-upward and tapering to a sharp flame tip
+      const zoneT = (t - 0.46) / 0.54;
+      const coneEnv = Math.pow(1 - zoneT, 0.72);
+      const fLen = maxR * (0.28 + coneEnv * 0.78);
+      const fWidth = fLen * 0.36;
+      const tilt = THREE.MathUtils.lerp(0.95, 0.16, zoneT) + (openness - 0.5) * 0.18;
+      const floret = buildSculptedCuppedPetal(
+        fLen,
+        fWidth,
+        fLen * 0.22,
+        fLen * 0.12,
+        colFlower,
+        colAccent,
+        zoneT > 0.6 ? colAccent : colFlower,
+        rand
+      );
+      const radOffset = maxR * (0.04 + coneEnv * 0.18);
+      const m = new THREE.Matrix4()
+        .makeTranslation(Math.cos(yaw) * radOffset, y, Math.sin(yaw) * radOffset)
+        .multiply(new THREE.Matrix4().makeRotationY(yaw))
+        .multiply(new THREE.Matrix4().makeRotationX(tilt));
+      floret.applyMatrix4(m);
+      parts.push(floret);
+    }
   }
   return parts;
 }
@@ -4768,10 +4869,8 @@ export function buildCustomElementFoliageCluster(
     return parts;
   }
 
-  if (
-    el.canopyElement === 'moss_velvet_mantle' ||
-    el.synthesizedTipPrimitive === 'bryophyte_moss_pad'
-  ) {
+  // Only intercept for moss_velvet_mantle (NEVER hijack explicit canopies like conifer_needle_brushes because of a tip primitive!)
+  if (el.canopyElement === 'moss_velvet_mantle') {
     const { deepMoss, midMoss, tipMoss } = resolveMossPalette(colorMain, colorTip);
     const dummyCurve = new THREE.CatmullRomCurve3([
       new THREE.Vector3(0, -scale * 0.25, 0),
@@ -5193,16 +5292,12 @@ export function generateComposedBotanicalGeometry(
     (el.synthesizedHeadTopology !== undefined && el.synthesizedHeadTopology !== 'none');
 
   const elText = `${el.name || ''} ${el.scientificName || ''} ${el.description || ''} ${el.aiNewPartsReport || ''}`.toLowerCase();
+  // Only treat as pure moss-mantle deadwood when canopyElement IS 'moss_velvet_mantle'
+  // (NEVER hijack explicit foliage canopies like conifer_needle_brushes, cloud_bonsai_pads, etc. just because tip is bryophyte_moss_pad!)
   const isMossyDeadwoodTrunk =
-    el.stemStructure === 'serpentine_mossy_deadwood' ||
     el.canopyElement === 'moss_velvet_mantle' ||
-    el.synthesizedTipPrimitive === 'bryophyte_moss_pad' ||
-    (el.surfaceElement === 'moss_lichen_bark' &&
-      (el.stemStructure === 'gnarled_bonsai' || el.stemStructure === 'hollow_ancient_snag') &&
-      (elText.includes('musgo') ||
-        elText.includes('bryophyt') ||
-        elText.includes('tronco') ||
-        elText.includes('lignum')));
+    (el.stemStructure === 'serpentine_mossy_deadwood' &&
+      (!el.canopyElement || el.canopyElement === 'custom_leaf_lamina'));
 
   const isHerbaceousStalk =
     !isMossyDeadwoodTrunk &&
@@ -5260,6 +5355,343 @@ export function generateComposedBotanicalGeometry(
     el.canopyElement === 'lacy_veil_spiked_mushroom' ||
     isSynthesizedFloralOrUmbelHead;
   const isMultiStalkColony = el.stemStructure === 'multi_stalk_umbel_colony';
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // DIRECT IMAGE-TO-3D RECONSTRUCTION ENGINE ('photo_sculpted_reconstruction')
+  // Builds an exact 3D sculpted volume + curved stem + radial petals directly
+  // from the photo's 16-slice silhouette and 16x16 foreground pixel color map!
+  // ═══════════════════════════════════════════════════════════════════════════
+  if (
+    el.canopyElement === 'photo_sculpted_reconstruction' &&
+    el.photoSculptData &&
+    Array.isArray(el.photoSculptData.slices) &&
+    el.photoSculptData.slices.length >= 6
+  ) {
+    const bp = el.photoSculptData;
+    const totalH = Math.max(1.8, H);
+    const totalW = totalH / Math.max(0.48, Math.min(2.4, bp.aspectRatio || 1.0));
+    const openness = THREE.MathUtils.clamp(el.petalOpenness ?? 0.68, 0, 1);
+    const scaleMult = THREE.MathUtils.clamp(leafScale || 1.0, 0.45, 2.2);
+
+    const gridW = Math.max(2, bp.colorGridW || 16);
+    const gridH = Math.max(2, bp.colorGridH || 16);
+    const tmpC00 = new THREE.Color();
+    const tmpC10 = new THREE.Color();
+    const tmpC01 = new THREE.Color();
+    const tmpC11 = new THREE.Color();
+    const tmpC0 = new THREE.Color();
+    const tmpC1 = new THREE.Color();
+
+    const samplePhotoColor = (uNorm: number, vNorm: number): THREE.Color => {
+      const u = THREE.MathUtils.clamp(uNorm, 0, 1) * (gridW - 1);
+      const v = THREE.MathUtils.clamp(vNorm, 0, 1) * (gridH - 1);
+      const x0 = Math.floor(u);
+      const y0 = Math.floor(v);
+      const x1 = Math.min(gridW - 1, x0 + 1);
+      const y1 = Math.min(gridH - 1, y0 + 1);
+      const fx = u - x0;
+      const fy = v - y0;
+      const getHex = (gx: number, gy: number) =>
+        bp.colorGridHex[gy * gridW + gx] || colLeafMain;
+      tmpC00.set(getHex(x0, y0));
+      tmpC10.set(getHex(x1, y0));
+      tmpC01.set(getHex(x0, y1));
+      tmpC11.set(getHex(x1, y1));
+      tmpC0.copy(tmpC00).lerp(tmpC10, fx);
+      tmpC1.copy(tmpC01).lerp(tmpC11, fx);
+      return tmpC0.clone().lerp(tmpC1, fy);
+    };
+
+    const sampleSlice = (yNorm: number) => {
+      const sl = bp.slices;
+      const fIdx = THREE.MathUtils.clamp(yNorm, 0, 1) * (sl.length - 1);
+      const i0 = Math.floor(fIdx);
+      const i1 = Math.min(sl.length - 1, i0 + 1);
+      const t = fIdx - i0;
+      return {
+        cx: THREE.MathUtils.lerp(sl[i0].cx, sl[i1].cx, t),
+        hw: THREE.MathUtils.lerp(sl[i0].hw, sl[i1].hw, t),
+        color: t < 0.5 ? sl[i0].color : sl[i1].color,
+      };
+    };
+
+    // 1. Exact Curved Stem / Trunk following lower photo centerline
+    const stemTop = THREE.MathUtils.clamp(bp.stemTopFrac ?? 0.28, 0.14, 0.62);
+    const stemPts: THREE.Vector3[] = [];
+    for (let k = 0; k <= 6; k++) {
+      const yN = (k / 6) * (stemTop * 1.06);
+      const sl = sampleSlice(yN);
+      stemPts.push(new THREE.Vector3(sl.cx * totalW * 0.85, yN * totalH, Math.sin(k * 0.7) * totalW * 0.02));
+    }
+    const baseSl = sampleSlice(0.05);
+    const neckSl = sampleSlice(stemTop);
+    const rBase = Math.max(0.08, Math.min(totalW * 0.28, baseSl.hw * totalW * 0.45));
+    const rNeck = Math.max(0.05, Math.min(totalW * 0.22, neckSl.hw * totalW * 0.38));
+    bodyGeometries.push(
+      buildSmoothCurveTube(
+        stemPts,
+        rBase,
+        rNeck,
+        14,
+        Math.max(8, radialSegs),
+        baseSl.color || colTrunk,
+        neckSl.color || colTrunk,
+        rand,
+        4,
+        0.1,
+        true
+      )
+    );
+
+    if (p.showRoots !== false) {
+      const rootCount = 6;
+      for (let r = 0; r < rootCount; r++) {
+        const ang = (r / rootCount) * Math.PI * 2 + (rand() - 0.5) * 0.25;
+        const rLen = Math.max(0.32, rBase * 2.1);
+        const rPts = [
+          new THREE.Vector3(stemPts[0].x, totalH * 0.06, stemPts[0].z),
+          new THREE.Vector3(stemPts[0].x + Math.cos(ang) * rLen * 0.55, totalH * 0.02, stemPts[0].z + Math.sin(ang) * rLen * 0.55),
+          new THREE.Vector3(stemPts[0].x + Math.cos(ang) * rLen, -0.02, stemPts[0].z + Math.sin(ang) * rLen),
+        ];
+        bodyGeometries.push(
+          buildSmoothCurveTube(rPts, rBase * 0.42, rBase * 0.08, 6, 5, baseSl.color || colTrunk, colTrunkDark, rand, 0, 0, true)
+        );
+      }
+    }
+
+    // 2. Sculpted 3D Asymmetric Crown OR Multi-Interval Separate Branches/Arms
+    const vSteps = Math.max(18, Math.round(26 * densityMult));
+    const uSteps = Math.max(20, Math.round(30 * densityMult));
+    const lobeCount = Math.max(5, Math.min(14, el.lobeCount || bp.lobeCount || 7));
+    const lobeDepth = bp.isRadialLobes ? 0.14 + Math.min(0.18, bp.edgeSpikiness * 0.35) : 0.05;
+    const crownStartY = Math.max(0.05, stemTop * 0.82);
+
+    const hasRealMultiIntervals =
+      Boolean(bp.hasMultiBranchGaps) &&
+      bp.slices.some((s) => Array.isArray(s.intervals) && s.intervals.length >= 2);
+
+    if (hasRealMultiIntervals) {
+      // MULTI-INTERVAL BRANCH TRACKER:
+      // Connects separated horizontal intervals vertically across the 16 slices so
+      // multi-arm cacti, bifurcated trunks, and open branches stay separated in 3D!
+      interface BranchNode {
+        yNorm: number;
+        cx: number;
+        hw: number;
+        color: string;
+      }
+      interface BranchChain {
+        nodes: BranchNode[];
+        zOffset: number;
+        closed: boolean;
+      }
+      const chains: BranchChain[] = [];
+
+      for (let si = 0; si < bp.slices.length; si++) {
+        const sl = bp.slices[si];
+        const ivs =
+          Array.isArray(sl.intervals) && sl.intervals.length > 0
+            ? sl.intervals
+            : [{ start: sl.cx - sl.hw, end: sl.cx + sl.hw, cx: sl.cx, hw: sl.hw, color: sl.color }];
+        const activeChains = chains.filter((c) => !c.closed);
+        const usedChains = new Set<BranchChain>();
+
+        for (const iv of ivs) {
+          let bestChain: BranchChain | null = null;
+          let bestDist = 0.24;
+          for (const ch of activeChains) {
+            if (usedChains.has(ch)) continue;
+            const last = ch.nodes[ch.nodes.length - 1];
+            const dist = Math.abs(last.cx - iv.cx);
+            if (dist < bestDist) {
+              bestDist = dist;
+              bestChain = ch;
+            }
+          }
+          if (bestChain) {
+            bestChain.nodes.push({ yNorm: sl.y, cx: iv.cx, hw: iv.hw, color: iv.color });
+            usedChains.add(bestChain);
+          } else {
+            // New emerging branch/arm: anchor its base to the nearest existing lower branch so it never floats!
+            const newNodes: BranchNode[] = [];
+            if (chains.length > 0 && si > 0) {
+              let parentNode: BranchNode | null = null;
+              let minP = Infinity;
+              for (const ch of chains) {
+                for (const nd of ch.nodes) {
+                  if (nd.yNorm <= sl.y && sl.y - nd.yNorm <= 0.22) {
+                    const d = Math.abs(nd.cx - iv.cx) + (sl.y - nd.yNorm);
+                    if (d < minP) {
+                      minP = d;
+                      parentNode = nd;
+                    }
+                  }
+                }
+              }
+              if (parentNode) {
+                newNodes.push({
+                  yNorm: Math.max(0.04, parentNode.yNorm),
+                  cx: parentNode.cx,
+                  hw: Math.min(parentNode.hw * 0.72, iv.hw * 0.95),
+                  color: parentNode.color,
+                });
+              }
+            }
+            newNodes.push({ yNorm: sl.y, cx: iv.cx, hw: iv.hw, color: iv.color });
+            const zSign = chains.length % 2 === 0 ? 1 : -1;
+            const zMag = chains.length === 0 ? 0 : Math.min(0.18, 0.05 + chains.length * 0.03) * totalW;
+            chains.push({ nodes: newNodes, zOffset: zSign * zMag, closed: false });
+          }
+        }
+        for (const ch of activeChains) {
+          if (!usedChains.has(ch)) ch.closed = true;
+        }
+      }
+
+      const armRadialSegs = Math.max(8, Math.round(12 * densityMult));
+      for (const ch of chains) {
+        if (ch.nodes.length < 2) continue;
+        const pts = ch.nodes.map(
+          (nd, idx) =>
+            new THREE.Vector3(
+              nd.cx * totalW * 0.9,
+              nd.yNorm * totalH,
+              ch.zOffset * (idx / Math.max(1, ch.nodes.length - 1))
+            )
+        );
+        const avgHw = ch.nodes.reduce((acc, n) => acc + n.hw, 0) / ch.nodes.length;
+        const rStart = Math.max(0.055, ch.nodes[0].hw * totalW * 0.86);
+        const rEnd = Math.max(0.035, ch.nodes[ch.nodes.length - 1].hw * totalW * 0.65);
+        const armGeo = buildSmoothCurveTube(
+          pts,
+          rStart,
+          rEnd,
+          Math.max(8, ch.nodes.length * 2),
+          armRadialSegs,
+          ch.nodes[0].color || colLeafMain,
+          ch.nodes[ch.nodes.length - 1].color || colLeafTip,
+          rand,
+          bp.isRadialLobes ? Math.min(10, lobeCount) : 5,
+          bp.isRadialLobes ? 0.12 : 0.06,
+          true
+        );
+        // Project exact 16x16 photo colors onto every vertex of this branch column
+        const posAttr = armGeo.getAttribute('position');
+        const colAttr = armGeo.getAttribute('color');
+        if (posAttr && colAttr) {
+          for (let vi = 0; vi < posAttr.count; vi++) {
+            const vx = posAttr.getX(vi);
+            const vy = posAttr.getY(vi);
+            const uPhoto = THREE.MathUtils.clamp(0.5 + vx / Math.max(0.4, totalW * 1.05), 0, 1);
+            const vPhoto = THREE.MathUtils.clamp(vy / totalH, 0, 1);
+            const pc = samplePhotoColor(uPhoto, vPhoto);
+            colAttr.setXYZ(vi, pc.r, pc.g, pc.b);
+          }
+          colAttr.needsUpdate = true;
+        }
+        // Thick main columns go to bodyGeometries; slimmer upper branches to detailGeometries
+        if (avgHw > 0.14 && ch.nodes[0].yNorm < stemTop + 0.12) {
+          bodyGeometries.push(ensureStandardAttributes(armGeo));
+        } else {
+          detailGeometries.push(ensureStandardAttributes(armGeo));
+        }
+      }
+    } else {
+      const posArr: number[] = [];
+      const colArr: number[] = [];
+      const uvArr: number[] = [];
+      const idxArr: number[] = [];
+
+      for (let iv = 0; iv <= vSteps; iv++) {
+        const vt = iv / vSteps;
+        const yNorm = THREE.MathUtils.lerp(crownStartY, 1.0, vt);
+        const sl = sampleSlice(yNorm);
+        // Taper cleanly closed at the very bottom & top caps
+        const capTaper =
+          iv === 0 ? 0.12 : iv === vSteps ? 0.04 : Math.sin(Math.min(1, vt * 7) * Math.PI * 0.5);
+        const openFactor = THREE.MathUtils.lerp(0.62, 1.18, openness);
+        const baseRad = Math.max(
+          0.02,
+          sl.hw * totalW * 0.92 * capTaper * openFactor * (0.75 + scaleMult * 0.25)
+        );
+        const yWorld = yNorm * totalH;
+        const cxWorld = sl.cx * totalW * 0.85;
+
+        for (let iu = 0; iu <= uSteps; iu++) {
+          const ut = iu / uSteps;
+          const theta = ut * Math.PI * 2;
+          const flute = 1.0 + lobeDepth * Math.cos(theta * lobeCount + vt * 1.4);
+          const rad = baseRad * flute;
+          const px = cxWorld + Math.cos(theta) * rad;
+          const pz = Math.sin(theta) * rad * 0.92;
+          posArr.push(px, yWorld, pz);
+          uvArr.push(ut, vt);
+
+          // Map 3D surface point directly back to the uploaded photo's 16x16 color map!
+          const photoU = THREE.MathUtils.clamp(0.5 + 0.47 * Math.cos(theta), 0, 1);
+          const c = samplePhotoColor(photoU, yNorm);
+          colArr.push(c.r, c.g, c.b);
+        }
+      }
+
+      const rowStride = uSteps + 1;
+      for (let iv = 0; iv < vSteps; iv++) {
+        for (let iu = 0; iu < uSteps; iu++) {
+          const a = iv * rowStride + iu;
+          const b = a + 1;
+          const c = (iv + 1) * rowStride + iu;
+          const d = c + 1;
+          idxArr.push(a, c, b, b, c, d);
+        }
+      }
+
+      const crownGeo = new THREE.BufferGeometry();
+      crownGeo.setAttribute('position', new THREE.Float32BufferAttribute(posArr, 3));
+      crownGeo.setAttribute('color', new THREE.Float32BufferAttribute(colArr, 3));
+      crownGeo.setAttribute('uv', new THREE.Float32BufferAttribute(uvArr, 2));
+      crownGeo.setIndex(idxArr);
+      crownGeo.computeVertexNormals();
+      detailGeometries.push(ensureStandardAttributes(crownGeo));
+    }
+
+    // 3. Sculpted 3D Radiating Petals / Leaves / Fronds painted with Exact Photo Colors
+    if (bp.isRadialLobes) {
+      const tiers = 2;
+      for (let tier = 0; tier < tiers; tier++) {
+        const tierYNorm = THREE.MathUtils.lerp(crownStartY + 0.16, 0.78, tier * 0.65 + 0.2);
+        const sl = sampleSlice(tierYNorm);
+        const petalCnt = Math.max(5, Math.min(12, lobeCount + (tier === 0 ? 2 : -1)));
+        const petalLen = Math.max(0.38, sl.hw * totalW * (tier === 0 ? 1.05 : 0.78) * scaleMult);
+        for (let pIdx = 0; pIdx < petalCnt; pIdx++) {
+          const ang = (pIdx / petalCnt) * Math.PI * 2 + tier * 0.35;
+          const pColBase = samplePhotoColor(0.5, tierYNorm);
+          const pColTip = samplePhotoColor(0.5 + 0.45 * Math.cos(ang), Math.min(1, tierYNorm + 0.14));
+          const petal = buildCustomContouredLeaf(
+            petalLen,
+            0.44,
+            1,
+            THREE.MathUtils.lerp(0.12, 0.55, openness),
+            '#' + pColBase.getHexString(),
+            '#' + pColTip.getHexString(),
+            rand
+          );
+          const tilt = THREE.MathUtils.lerp(0.24, 1.15, openness) + (tier === 0 ? 0.14 : -0.18);
+          const pm = new THREE.Matrix4()
+            .makeTranslation(sl.cx * totalW * 0.85, tierYNorm * totalH, 0)
+            .multiply(new THREE.Matrix4().makeRotationY(ang))
+            .multiply(new THREE.Matrix4().makeTranslation(0, 0, sl.hw * totalW * 0.38))
+            .multiply(new THREE.Matrix4().makeRotationX(tilt));
+          petal.applyMatrix4(pm);
+          detailGeometries.push(petal);
+        }
+      }
+    }
+
+    return {
+      bodyGeometries,
+      detailGeometries,
+    };
+  }
 
   // ═══════════════════════════════════════════════════════════════════════════
   // LAYER 0: SPREADING GNARLED ROOT COLLAR (Welded into trunk base at y = 0..startY)
@@ -6979,46 +7411,71 @@ export function generateComposedBotanicalGeometry(
     });
   } else if (el.stemStructure === 'ebony_fluted_bonsai_arch') {
     // ───────────────────────────────────────────────────────────────────────
-    // 22. ARCO BONSÁI ACANALADO DE ÉBANO (Looping S-arch gnarled trunk + limbs)
+    // 22. ARCO BONSÁI ACANALADO DE ÉBANO (Sculptural twisted fluted S-arch trunk + tiered limbs)
     // ───────────────────────────────────────────────────────────────────────
     const archPts = [
-      new THREE.Vector3(-H * 0.22, -0.04, 0),
-      new THREE.Vector3(-H * 0.34, H * 0.28, H * 0.08),
-      new THREE.Vector3(-H * 0.08, H * 0.58, -H * 0.06),
-      new THREE.Vector3(H * 0.22, H * 0.72, H * 0.05),
-      new THREE.Vector3(H * 0.06, H * 0.94, 0),
+      new THREE.Vector3(-H * 0.14, -0.04, 0),
+      new THREE.Vector3(-H * 0.34, H * 0.24, H * 0.08),
+      new THREE.Vector3(-H * 0.12, H * 0.52, -H * 0.06),
+      new THREE.Vector3(H * 0.24, H * 0.72, H * 0.06),
+      new THREE.Vector3(H * 0.08, H * 0.92, -H * 0.02),
     ];
     const mainArchCurve = new THREE.CatmullRomCurve3(archPts);
     bodyGeometries.push(
-      buildSmoothCurveTube(archPts, R * 1.45, R * 0.36, 22, 10, colTrunk, colTrunk, rand, 6, 0.24, true)
+      buildSmoothCurveTube(archPts, R * 1.55, R * 0.38, 24, 12, colTrunkDark, colTrunk, rand, 8, 0.26, true)
     );
-    mainStemCurves.push({ curve: mainArchCurve, rStart: R * 1.45, rEnd: R * 0.36 });
+    mainStemCurves.push({ curve: mainArchCurve, rStart: R * 1.55, rEnd: R * 0.38 });
 
-    // Secondary dramatic counter-arch limb + 3 tiered canopy branches
+    // 3 braided helical muscle-flutes wrapping the gnarled ebony trunk
+    for (let strand = 0; strand < 3; strand++) {
+      const phase = (strand / 3) * Math.PI * 2;
+      const strandPts: THREE.Vector3[] = [];
+      const steps = 14;
+      for (let k = 0; k <= steps; k++) {
+        const kt = k / steps;
+        const cPos = mainArchCurve.getPointAt(kt);
+        const radAt = THREE.MathUtils.lerp(R * 1.25, R * 0.26, kt);
+        const ang = phase + kt * Math.PI * 2.6;
+        strandPts.push(
+          new THREE.Vector3(
+            cPos.x + Math.cos(ang) * radAt * 0.78,
+            cPos.y,
+            cPos.z + Math.sin(ang) * radAt * 0.78
+          )
+        );
+      }
+      bodyGeometries.push(
+        buildSmoothCurveTube(strandPts, R * 0.42, R * 0.11, 16, 6, colTrunkDark, colTrunk, rand, 3, 0.12, true)
+      );
+    }
+
+    // 5 dramatic curved bonsai limbs with secondary twigs & generous foliage pad nodes
     const limbSpecs = [
-      { t: 0.42, dx: -0.34, dy: 0.28, dz: 0.16, rF: 0.48 },
-      { t: 0.68, dx: 0.36, dy: 0.24, dz: -0.18, rF: 0.42 },
-      { t: 0.86, dx: -0.22, dy: 0.22, dz: -0.22, rF: 0.34 },
+      { t: 0.38, dx: -0.38, dy: 0.24, dz: 0.16, rF: 0.52, padF: 0.36 },
+      { t: 0.56, dx: 0.38, dy: 0.22, dz: -0.18, rF: 0.46, padF: 0.38 },
+      { t: 0.72, dx: -0.28, dy: 0.22, dz: -0.22, rF: 0.40, padF: 0.35 },
+      { t: 0.84, dx: 0.26, dy: 0.18, dz: 0.20, rF: 0.34, padF: 0.34 },
+      { t: 0.92, dx: -0.16, dy: 0.14, dz: 0.14, rF: 0.28, padF: 0.32 },
     ];
     limbSpecs.forEach((ls) => {
       const origin = mainArchCurve.getPointAt(ls.t);
-      const mid = origin.clone().add(new THREE.Vector3(ls.dx * H * 0.55, ls.dy * H * 0.45, ls.dz * H * 0.55));
+      const mid = origin.clone().add(new THREE.Vector3(ls.dx * H * 0.52, ls.dy * H * 0.32, ls.dz * H * 0.52));
       const end = origin.clone().add(new THREE.Vector3(ls.dx * H, ls.dy * H, ls.dz * H));
       const lCurve = new THREE.CatmullRomCurve3([origin, mid, end]);
       bodyGeometries.push(
-        buildSmoothCurveTube([origin, mid, end], R * ls.rF, R * 0.14, 12, 7, colTrunk, colTrunk, rand, 4, 0.16, true)
+        buildSmoothCurveTube([origin, mid, end], R * ls.rF, R * 0.15, 14, 8, colTrunkDark, colTrunk, rand, 5, 0.18, true)
       );
-      mainStemCurves.push({ curve: lCurve, rStart: R * ls.rF, rEnd: R * 0.14 });
+      mainStemCurves.push({ curve: lCurve, rStart: R * ls.rF, rEnd: R * 0.15 });
       canopyAttachmentNodes.push({
         pos: end,
-        radius: H * 0.26 * leafScale,
-        stemRadius: R * 0.14,
-        dir: new THREE.Vector3(ls.dx, 0.85, ls.dz).normalize(),
+        radius: H * ls.padF * leafScale,
+        stemRadius: R * 0.15,
+        dir: new THREE.Vector3(ls.dx * 0.3, 0.95, ls.dz * 0.3).normalize(),
       });
     });
     canopyAttachmentNodes.push({
       pos: mainArchCurve.getPointAt(1.0),
-      radius: H * 0.34 * leafScale,
+      radius: H * 0.44 * leafScale,
       stemRadius: R * 0.36,
       dir: new THREE.Vector3(0, 1, 0),
       isPrimaryApex: true,
@@ -7979,44 +8436,43 @@ export function generateComposedBotanicalGeometry(
       }
     });
   } else if (el.canopyElement === 'cloud_bonsai_pads') {
+    // True individual bonsai foliage: zero solid cloud-balls!
+    // Builds fine bifurcating woody twigs fanning out from each branch tip,
+    // each twig bearing distinct, separated 3D leaf rosettes with airy gaps between leaves.
     canopyAttachmentNodes.forEach((node) => {
-      const padR = Math.max(0.48, node.radius * 0.88);
-      const padH = padR * 0.34;
-      const subLobeCount = 5;
+      const padR = Math.max(0.58, node.radius * 1.04);
+      const padH = padR * 0.44;
+      const primaryTwigs = 7;
 
-      const centerCushion = buildSculptedCloudCushionCore(
-        padR * 0.56,
-        padH * 0.85,
-        padR * 0.56,
-        colLeafDark,
-        colLeafMain,
-        colLeafTip,
-        densityMult,
-        rand
-      );
-      centerCushion.translate(node.pos.x, node.pos.y, node.pos.z);
-      detailGeometries.push(centerCushion);
-
-      const cushionCenters: { pos: THREE.Vector3; rx: number; ry: number }[] = [
-        { pos: node.pos.clone(), rx: padR * 0.56, ry: padH * 0.85 },
+      interface LeafSprayAnchor {
+        pos: THREE.Vector3;
+        dir: THREE.Vector3;
+        scale: number;
+      }
+      const sprayAnchors: LeafSprayAnchor[] = [
+        {
+          pos: node.pos.clone().add(new THREE.Vector3(0, padH * 0.32, 0)),
+          dir: new THREE.Vector3(0, 1, 0),
+          scale: padR * 0.34,
+        },
       ];
 
-      for (let sb = 0; sb < subLobeCount; sb++) {
-        const sbAng = (sb / subLobeCount) * Math.PI * 2 + (rand() - 0.5) * 0.22;
-        const sbDist = padR * (0.48 + (sb % 2) * 0.14);
+      for (let sb = 0; sb < primaryTwigs; sb++) {
+        const sbAng = (sb / primaryTwigs) * Math.PI * 2 + (rand() - 0.5) * 0.28;
+        const sbDist = padR * (0.48 + (sb % 2) * 0.24);
         const sbEndPos = new THREE.Vector3(
           node.pos.x + Math.cos(sbAng) * sbDist,
-          node.pos.y + padH * (0.06 + (sb % 2) * 0.08),
+          node.pos.y + padH * (0.14 + (sb % 3) * 0.14),
           node.pos.z + Math.sin(sbAng) * sbDist
         );
         const sbMidPos = new THREE.Vector3(
           node.pos.x + Math.cos(sbAng) * sbDist * 0.52,
-          node.pos.y + padH * 0.03,
+          node.pos.y + padH * 0.05,
           node.pos.z + Math.sin(sbAng) * sbDist * 0.52
         );
 
-        const twigRStart = Math.max(0.018, node.stemRadius * 0.72);
-        const twigREnd = Math.max(0.01, twigRStart * 0.42);
+        const twigRStart = Math.max(0.018, node.stemRadius * 0.68);
+        const twigREnd = Math.max(0.008, twigRStart * 0.38);
         const twigPts = [node.pos.clone(), sbMidPos, sbEndPos];
         bodyGeometries.push(
           buildSmoothCurveTube(
@@ -8039,49 +8495,78 @@ export function generateComposedBotanicalGeometry(
           rEnd: twigREnd,
         });
 
-        const lobeR = padR * (0.44 + (rand() - 0.5) * 0.06);
-        const lobeH = padH * (0.72 + (rand() - 0.5) * 0.08);
-        const lobeCushion = buildSculptedCloudCushionCore(
-          lobeR,
-          lobeH,
-          lobeR,
-          colLeafDark,
-          colLeafMain,
-          sb % 2 === 0 ? colLeafTip : colFlower,
-          densityMult,
-          rand
-        );
-        lobeCushion.translate(sbEndPos.x, sbEndPos.y, sbEndPos.z);
-        detailGeometries.push(lobeCushion);
+        sprayAnchors.push({
+          pos: sbEndPos.clone(),
+          dir: new THREE.Vector3(Math.cos(sbAng) * 0.4, 0.9, Math.sin(sbAng) * 0.4).normalize(),
+          scale: padR * 0.30,
+        });
 
-        cushionCenters.push({ pos: sbEndPos, rx: lobeR, ry: lobeH });
+        // 2 fine secondary forked twigs per primary twig so real black branches show under the leaves
+        for (let fork = 0; fork < 2; fork++) {
+          const fAng = sbAng + (fork === 0 ? -0.58 : 0.58) + (rand() - 0.5) * 0.18;
+          const fLen = padR * (0.28 + rand() * 0.16);
+          const fOrigin = sbMidPos.clone().lerp(sbEndPos, 0.45 + fork * 0.3);
+          const fTip = new THREE.Vector3(
+            fOrigin.x + Math.cos(fAng) * fLen,
+            fOrigin.y + padH * (0.18 + rand() * 0.22),
+            fOrigin.z + Math.sin(fAng) * fLen
+          );
+          const fMid = fOrigin.clone().lerp(fTip, 0.5);
+          fMid.y += padH * 0.06;
+          bodyGeometries.push(
+            buildSmoothCurveTube(
+              [fOrigin, fMid, fTip],
+              twigREnd * 1.15,
+              twigREnd * 0.45,
+              4,
+              4,
+              colTrunkDark,
+              colTrunk,
+              rand,
+              0,
+              0,
+              true
+            )
+          );
+          sprayAnchors.push({
+            pos: fTip,
+            dir: new THREE.Vector3(Math.cos(fAng) * 0.45, 0.88, Math.sin(fAng) * 0.45).normalize(),
+            scale: padR * (0.24 + rand() * 0.08),
+          });
+        }
       }
 
-      const leavesPerCushion = Math.max(6, Math.round(9 * Math.min(1.4, densityMult)));
-      cushionCenters.forEach((cNode, cIdx) => {
-        for (let l = 0; l < leavesPerCushion; l++) {
-          const u = (l + 0.5) / leavesPerCushion;
-          const lAng = l * golden + cIdx * 1.1;
-          const lRad = Math.sqrt(u) * cNode.rx * 0.65;
-          const domeY = Math.cos((lRad / cNode.rx) * Math.PI * 0.5) * cNode.ry * 0.68;
+      // Populate each twig tip with a crisp radial rosette of individual separated 3D leaves
+      const leavesPerAnchor = Math.max(7, Math.round(9 * Math.min(1.4, densityMult)));
+      sprayAnchors.forEach((anchor, aIdx) => {
+        for (let l = 0; l < leavesPerAnchor; l++) {
+          const ringT = l / leavesPerAnchor;
+          const lAng = l * golden + aIdx * 1.37;
+          const spreadR = anchor.scale * (0.14 + Math.sqrt(ringT) * 0.62);
+          const liftY = anchor.scale * (0.04 + (1.0 - ringT * 0.7) * 0.28 + (rand() - 0.5) * 0.08);
 
-          const lx = cNode.pos.x + Math.cos(lAng) * lRad;
-          const lz = cNode.pos.z + Math.sin(lAng) * lRad;
-          const ly = cNode.pos.y + domeY;
+          const lx = anchor.pos.x + Math.cos(lAng) * spreadR;
+          const lz = anchor.pos.z + Math.sin(lAng) * spreadR;
+          const ly = anchor.pos.y + liftY;
 
+          // Natural outward & slightly upward leaf pitch so individual blades catch light separately
           const outDir = new THREE.Vector3(
-            Math.cos(lAng) * (0.35 + u * 0.55),
-            0.85 - u * 0.35,
-            Math.sin(lAng) * (0.35 + u * 0.55)
+            Math.cos(lAng) * (0.62 + ringT * 0.35),
+            0.52 - ringT * 0.28 + (rand() - 0.5) * 0.16,
+            Math.sin(lAng) * (0.62 + ringT * 0.35)
           ).normalize();
 
+          const leafBaseCol = l % 3 === 0 ? colLeafDark : colLeafMain;
+          const leafTipCol =
+            l % 4 === 0 ? colFlower : l % 4 === 1 ? colLeafTip : l % 4 === 2 ? colAccent : colLeafMain;
+          const leafLen = anchor.scale * (0.62 + (rand() - 0.5) * 0.24);
           const leaf = buildCustomContouredLeaf(
-            cNode.rx * (0.46 + (1 - u * 0.25) * 0.16),
-            0.72,
-            el.lobeCount || 3,
-            0.26,
-            colLeafMain,
-            l % 2 === 0 ? colLeafTip : colFlower,
+            leafLen,
+            0.66,
+            Math.min(5, Math.max(3, el.lobeCount || 3)),
+            0.28,
+            leafBaseCol,
+            leafTipCol,
             rand
           );
           const qRot = new THREE.Quaternion().setFromUnitVectors(
@@ -8589,7 +9074,188 @@ export function generateComposedBotanicalGeometry(
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // HYBRID VLM + PHOTO BOUNDING ENVELOPE & 16×16 COLOR-MAP PROJECTION
+  // Conforms the VLM's real 3D branches, needles, leaves, petals, and caps
+  // smoothly into the uploaded photo's 16-slice silhouette & pixel colors!
+  // ═══════════════════════════════════════════════════════════════════════════
+  if (
+    el.photoSculptData &&
+    (el.photoSculptData.photoEnvelopeStrength ?? 0) > 0.05 &&
+    el.canopyElement !== 'photo_sculpted_reconstruction' &&
+    Array.isArray(el.photoSculptData.slices) &&
+    el.photoSculptData.slices.length >= 6
+  ) {
+    applyPhotoEnvelopeToGeometries(
+      bodyGeometries,
+      detailGeometries,
+      el.photoSculptData,
+      colLeafMain
+    );
+  }
+
   return { bodyGeometries, detailGeometries };
+}
+
+/**
+ * Hybrid Bounding Envelope & Color-Map Projector:
+ * Gently molds generated botanical 3D geometries to match the uploaded photo's
+ * 16-slice silhouette (including multi-interval branch columns) and blends the
+ * photo's real 16×16 foreground pixel colors onto vertices while preserving 3D shading.
+ */
+function applyPhotoEnvelopeToGeometries(
+  bodyGeometries: THREE.BufferGeometry[],
+  detailGeometries: THREE.BufferGeometry[],
+  bp: PhotoSculptBlueprint,
+  fallbackHex: string
+): void {
+  const strength = THREE.MathUtils.clamp(bp.photoEnvelopeStrength ?? 0.72, 0.05, 1.0);
+  const allGeos = [...bodyGeometries, ...detailGeometries];
+  if (allGeos.length === 0) return;
+
+  let minY = Infinity;
+  let maxY = -Infinity;
+  let maxAbsR = 0.25;
+
+  for (const geo of allGeos) {
+    const pos = geo.getAttribute('position');
+    if (!pos) continue;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const y = pos.getY(i);
+      const z = pos.getZ(i);
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+      const r = Math.hypot(x, z);
+      if (r > maxAbsR) maxAbsR = r;
+    }
+  }
+  if (!Number.isFinite(minY) || !Number.isFinite(maxY) || maxY - minY < 0.15) return;
+
+  const spanY = maxY - minY;
+  const targetW = spanY / Math.max(0.45, Math.min(2.4, bp.aspectRatio || 1.0));
+  const gridW = Math.max(2, bp.colorGridW || 16);
+  const gridH = Math.max(2, bp.colorGridH || 16);
+
+  const c00 = new THREE.Color();
+  const c10 = new THREE.Color();
+  const c01 = new THREE.Color();
+  const c11 = new THREE.Color();
+  const cTop = new THREE.Color();
+  const cBot = new THREE.Color();
+  const cSample = new THREE.Color();
+  const cVert = new THREE.Color();
+
+  const sampleGridColor = (uNorm: number, vNorm: number): THREE.Color => {
+    const u = THREE.MathUtils.clamp(uNorm, 0, 1) * (gridW - 1);
+    const v = THREE.MathUtils.clamp(vNorm, 0, 1) * (gridH - 1);
+    const x0 = Math.floor(u);
+    const y0 = Math.floor(v);
+    const x1 = Math.min(gridW - 1, x0 + 1);
+    const y1 = Math.min(gridH - 1, y0 + 1);
+    const fx = u - x0;
+    const fy = v - y0;
+    const hexAt = (gx: number, gy: number) => bp.colorGridHex[gy * gridW + gx] || fallbackHex;
+    c00.set(hexAt(x0, y0));
+    c10.set(hexAt(x1, y0));
+    c01.set(hexAt(x0, y1));
+    c11.set(hexAt(x1, y1));
+    cBot.copy(c00).lerp(c10, fx);
+    cTop.copy(c01).lerp(c11, fx);
+    return cSample.copy(cBot).lerp(cTop, fy);
+  };
+
+  const slices = bp.slices;
+  const sampleSliceAt = (yNorm: number) => {
+    const fIdx = THREE.MathUtils.clamp(yNorm, 0, 1) * (slices.length - 1);
+    const i0 = Math.floor(fIdx);
+    const i1 = Math.min(slices.length - 1, i0 + 1);
+    const t = fIdx - i0;
+    return {
+      cx: THREE.MathUtils.lerp(slices[i0].cx, slices[i1].cx, t),
+      hw: THREE.MathUtils.lerp(slices[i0].hw, slices[i1].hw, t),
+      intervals: t < 0.5 ? slices[i0].intervals : slices[i1].intervals,
+    };
+  };
+
+  const morphGeometries = (
+    geos: THREE.BufferGeometry[],
+    envelopeWeight: number,
+    colorBlendWeight: number
+  ) => {
+    for (const geo of geos) {
+      const pos = geo.getAttribute('position');
+      if (!pos) continue;
+      const col = geo.getAttribute('color');
+
+      for (let i = 0; i < pos.count; i++) {
+        let x = pos.getX(i);
+        const y = pos.getY(i);
+        let z = pos.getZ(i);
+        const yNorm = THREE.MathUtils.clamp((y - minY) / spanY, 0, 1);
+        const sl = sampleSliceAt(yNorm);
+
+        // 1. Gently conform radial spread & horizontal centerline to the photo's silhouette
+        const targetCx = sl.cx * targetW * 0.55;
+        const targetMaxR = Math.max(0.12, sl.hw * targetW * 1.08);
+        const rNow = Math.hypot(x, z);
+
+        if (rNow > targetMaxR && envelopeWeight > 0) {
+          const clampedR = THREE.MathUtils.lerp(rNow, targetMaxR, envelopeWeight * strength);
+          const ratio = clampedR / Math.max(1e-4, rNow);
+          x *= ratio;
+          z *= ratio;
+        }
+
+        // Shift gently toward the photo's centerline lean (only above root collar)
+        const leanFactor = Math.min(1, yNorm * 2.2) * envelopeWeight * strength * 0.42;
+        x += targetCx * leanFactor;
+
+        // If the photo has separated multi-branch intervals at this height, subtly pull
+        // foliage/branches toward their nearest detected column center
+        if (
+          bp.hasMultiBranchGaps &&
+          sl.intervals &&
+          sl.intervals.length >= 2 &&
+          envelopeWeight > 0.2
+        ) {
+          let nearestCx = sl.intervals[0].cx * targetW * 0.72;
+          let bestDist = Math.abs(x - nearestCx);
+          for (let k = 1; k < sl.intervals.length; k++) {
+            const candCx = sl.intervals[k].cx * targetW * 0.72;
+            const d = Math.abs(x - candCx);
+            if (d < bestDist) {
+              bestDist = d;
+              nearestCx = candCx;
+            }
+          }
+          x = THREE.MathUtils.lerp(x, nearestCx, 0.16 * envelopeWeight * strength);
+        }
+
+        pos.setXYZ(i, x, y, z);
+
+        // 2. Project exact 16×16 photo pixel color smoothly onto vertex colors
+        if (col && colorBlendWeight > 0) {
+          const photoU = THREE.MathUtils.clamp(0.5 + (x / Math.max(0.35, maxAbsR * 1.15)) * 0.46, 0, 1);
+          const pc = sampleGridColor(photoU, yNorm);
+          cVert.setRGB(col.getX(i), col.getY(i), col.getZ(i));
+          cVert.lerp(pc, colorBlendWeight * strength);
+          col.setXYZ(i, cVert.r, cVert.g, cVert.b);
+        }
+      }
+
+      pos.needsUpdate = true;
+      if (col) col.needsUpdate = true;
+      // Do NOT call geo.computeVertexNormals() here: geometries are non-indexed after ensureStandardAttributes(),
+      // so recomputing normals would overwrite smooth normals with flat low-poly faceted triangles!
+    }
+  };
+
+  // Detail geometries (foliage, petals, needles, spines, caps) follow the photo envelope gently without crushing 3D volume
+  morphGeometries(detailGeometries, 0.34, 0.42);
+  // Body geometries (trunks, stems, branches) NEVER get painted by the 2D foliage color map or squashed!
+  // They keep their true VLM bark color (e.g., black ebony, pale birch, mossy wood) and structural integrity.
+  void bodyGeometries;
 }
 
 /**

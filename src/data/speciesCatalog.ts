@@ -211,6 +211,7 @@ export const CANOPY_ELEMENT_META: Record<CanopyElementType, { label: string }> =
   curled_horn_rosette:           { label: '38. ✨ Roseta Suculenta de Cuernos Espirales Curvos' },
   spiny_crater_dragon_orb:       { label: '39. ✨ Orbe Dragón Espinoso con Cráter de Estambres' },
   lacy_veil_spiked_mushroom:     { label: '40. ✨ Seta Espinosa con Velo de Encaje Colgante' },
+  photo_sculpted_reconstruction: { label: '41. 🎯 Reconstrucción 3D Directa desde Foto (Silueta + Color Real)' },
 };
 
 export const SYNTHESIZED_TIP_META: Record<SynthesizedTipPrimitive, { label: string }> = {

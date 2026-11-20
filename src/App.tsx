@@ -104,6 +104,8 @@ import {
 import { synthesizeHybridSpecies } from './utils/hybridSpeciesSynthesizer';
 import {
   getUnifiedPartsLibrary,
+  deduplicateUnifiedPartsLibrary,
+  getPartSubGroup,
   UnifiedPartCategory,
   applyUnifiedPartToTreeParams,
 } from './utils/partsLibrary';
@@ -259,6 +261,7 @@ export default function App() {
   }>({ loading: false });
   const [aiPreparedImage, setAiPreparedImage] = useState<PreparedPlantImage | null>(null);
   const [aiUserNotes, setAiUserNotes] = useState<string>('');
+  const [aiDirectPhotoSculpt, setAiDirectPhotoSculpt] = useState<boolean>(true);
   const [aiLoading, setAiLoading] = useState<boolean>(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [activeAiDesignInfo, setActiveAiDesignInfo] = useState<{
@@ -268,6 +271,7 @@ export default function App() {
     previewDataUrl: string;
     providerUsed?: string;
   } | null>(null);
+  const [showAiStep2Inspector, setShowAiStep2Inspector] = useState<boolean>(false);
 
   // Permanent AI-created custom elements & custom species saved in the app
   const [customElements, setCustomElements] = useState<CustomBotanicalElement[]>(() =>
@@ -482,9 +486,6 @@ export default function App() {
     (part: ViewportHitPart) => {
       setSidebarOpen(true);
       setHighlightedPart(part);
-      window.setTimeout(() => {
-        setHighlightedPart((prev) => (prev === part ? null : prev));
-      }, 7500);
 
       if (part === 'ecosystem_base') {
         setActiveTab('shaders');
@@ -877,7 +878,8 @@ export default function App() {
       const designed = await designPlantFromImageWithAI(
         aiPreparedImage,
         aiUserNotes,
-        aiProviderConfig
+        aiProviderConfig,
+        aiDirectPhotoSculpt
       );
       // Refresh permanent custom elements, species & auto-saved modular parts lists
       setCustomElements(loadSavedCustomElements());
@@ -1544,41 +1546,175 @@ export default function App() {
                 </select>
               </div>
 
-              {/* Compact 1-Line Active AI Banner or Save Notice (Takes minimal vertical space) */}
+              {/* Compact 1-Line Active AI Banner + Collapsible Step 2 AI Diagnostic Inspector */}
               {activeAiDesignInfo && (
-                <div className="px-2 py-1 rounded bg-[#13222e] border border-emerald-500/40 text-[11px] flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <img
-                      src={activeAiDesignInfo.previewDataUrl}
-                      alt={activeAiDesignInfo.name}
-                      className="w-7 h-7 rounded object-cover border border-emerald-400/40 shrink-0 bg-slate-950"
-                    />
-                    <div className="min-w-0">
-                      <div className="font-semibold text-emerald-200 truncate text-[11px]">
-                        {activeAiDesignInfo.name}
-                      </div>
-                      <div className="text-[9px] text-slate-400 truncate">
-                        {activeAiDesignInfo.providerUsed ? `${activeAiDesignInfo.providerUsed} · ` : ''}
-                        {activeAiDesignInfo.scientificName}
+                <div className="rounded bg-[#13222e] border border-emerald-500/40 text-[11px] overflow-hidden">
+                  <div className="px-2 py-1 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <img
+                        src={activeAiDesignInfo.previewDataUrl}
+                        alt={activeAiDesignInfo.name}
+                        className="w-7 h-7 rounded object-cover border border-emerald-400/40 shrink-0 bg-slate-950"
+                      />
+                      <div className="min-w-0">
+                        <div className="font-semibold text-emerald-200 truncate text-[11px]">
+                          {activeAiDesignInfo.name}
+                        </div>
+                        <div className="text-[9px] text-slate-400 truncate">
+                          {activeAiDesignInfo.providerUsed ? `${activeAiDesignInfo.providerUsed} · ` : ''}
+                          {activeAiDesignInfo.scientificName}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    {activeTab !== 'foliage' && (
+                    <div className="flex items-center gap-1 shrink-0">
+                      {activeTab !== 'foliage' && (
+                        <button
+                          onClick={() => setActiveTab('foliage')}
+                          className="px-1.5 py-0.5 rounded bg-emerald-500 text-slate-950 font-semibold text-[10px] cursor-pointer"
+                        >
+                          Sliders
+                        </button>
+                      )}
                       <button
-                        onClick={() => setActiveTab('foliage')}
-                        className="px-1.5 py-0.5 rounded bg-emerald-500 text-slate-950 font-semibold text-[10px] cursor-pointer"
+                        onClick={() => setShowAiStep2Inspector((v) => !v)}
+                        title="Inspeccionar qué piezas, shaders y colores decidió la IA (Paso 2)"
+                        className={`px-1.5 py-0.5 rounded text-[10px] cursor-pointer border transition-colors ${
+                          showAiStep2Inspector
+                            ? 'bg-cyan-500/25 border-cyan-400 text-cyan-200 font-semibold'
+                            : 'bg-slate-800 hover:bg-slate-700 text-cyan-300 border-slate-700'
+                        }`}
                       >
-                        Sliders
+                        🔬 IA
                       </button>
-                    )}
-                    <button
-                      onClick={() => setAiModalOpen(true)}
-                      className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-emerald-300 text-[10px] cursor-pointer border border-slate-700"
-                    >
-                      Foto
-                    </button>
+                      <button
+                        onClick={() => setAiModalOpen(true)}
+                        className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-emerald-300 text-[10px] cursor-pointer border border-slate-700"
+                      >
+                        Foto
+                      </button>
+                    </div>
                   </div>
+
+                  {showAiStep2Inspector && params.customElement && (
+                    <div className="px-2 py-2 border-t border-cyan-500/30 bg-[#09111c] space-y-1.5 text-[10px]">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold uppercase tracking-wider text-[9px] text-cyan-300">
+                          🔬 Diagnóstico Paso 2 — Decisión IA
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const el = params.customElement;
+                            const step2Json = {
+                              name: activeAiDesignInfo.name,
+                              scientificName: activeAiDesignInfo.scientificName,
+                              providerUsed: activeAiDesignInfo.providerUsed,
+                              parts: {
+                                stemStructure: el?.stemStructure,
+                                canopyElement: el?.canopyElement,
+                                surfaceElement: el?.surfaceElement,
+                                hangingElement: el?.hangingElement,
+                                synthesizedHeadTopology: el?.synthesizedHeadTopology,
+                                synthesizedTipPrimitive: el?.synthesizedTipPrimitive,
+                                synthesizedBasalFoliage: el?.synthesizedBasalFoliage,
+                              },
+                              shaders: {
+                                barkType: params.barkType,
+                                tonalMode: params.tonalMode,
+                              },
+                              colors: {
+                                colorTrunk: params.colorTrunk,
+                                colorLeafMain: params.colorLeafMain,
+                                colorLeafTip: params.colorLeafTip,
+                                colorFlower: params.colorFlower,
+                                colorAccent: params.colorAccent,
+                              },
+                              geometry: {
+                                height: params.height,
+                                radius: params.radius,
+                                leafScale: params.leafScale,
+                                stemCount: el?.stemCount,
+                                lobeCount: el?.lobeCount,
+                                padLayers: el?.padLayers,
+                                petalOpenness: el?.petalOpenness,
+                                latheProfileRadii: el?.latheProfileRadii,
+                                petalContourProfile: el?.petalContourProfile,
+                              },
+                            };
+                            navigator.clipboard?.writeText(JSON.stringify(step2Json, null, 2));
+                            setSaveNotice('JSON Paso 2 copiado al portapapeles.');
+                            setTimeout(() => setSaveNotice(null), 2200);
+                          }}
+                          className="px-1.5 py-0.5 rounded bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/40 text-[9px] text-cyan-200 cursor-pointer"
+                        >
+                          Copiar JSON
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-1 font-mono text-[9px]">
+                        <div className="bg-[#0e1928] px-1.5 py-0.5 rounded border border-slate-800 truncate">
+                          <span className="text-slate-500">stem: </span>
+                          <span className="text-emerald-300">{params.customElement.stemStructure}</span>
+                        </div>
+                        <div className="bg-[#0e1928] px-1.5 py-0.5 rounded border border-slate-800 truncate">
+                          <span className="text-slate-500">canopy: </span>
+                          <span className="text-amber-300">{params.customElement.canopyElement}</span>
+                        </div>
+                        <div className="bg-[#0e1928] px-1.5 py-0.5 rounded border border-slate-800 truncate">
+                          <span className="text-slate-500">surface: </span>
+                          <span className="text-slate-200">{params.customElement.surfaceElement}</span>
+                        </div>
+                        <div className="bg-[#0e1928] px-1.5 py-0.5 rounded border border-slate-800 truncate">
+                          <span className="text-slate-500">hanging: </span>
+                          <span className="text-slate-200">{params.customElement.hangingElement}</span>
+                        </div>
+                        <div className="bg-[#0e1928] px-1.5 py-0.5 rounded border border-slate-800 truncate">
+                          <span className="text-slate-500">tip: </span>
+                          <span className="text-violet-300">{params.customElement.synthesizedTipPrimitive || 'none'}</span>
+                        </div>
+                        <div className="bg-[#0e1928] px-1.5 py-0.5 rounded border border-slate-800 truncate">
+                          <span className="text-slate-500">basal: </span>
+                          <span className="text-lime-300">{params.customElement.synthesizedBasalFoliage || 'none'}</span>
+                        </div>
+                        <div className="bg-[#0e1928] px-1.5 py-0.5 rounded border border-slate-800 truncate">
+                          <span className="text-slate-500">bark: </span>
+                          <span className="text-slate-200">{params.barkType}</span>
+                        </div>
+                        <div className="bg-[#0e1928] px-1.5 py-0.5 rounded border border-slate-800 truncate">
+                          <span className="text-slate-500">shader: </span>
+                          <span className="text-sky-300">{params.tonalMode}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-1 text-[9px]">
+                        {(
+                          [
+                            ['Tr', params.colorTrunk],
+                            ['Mn', params.colorLeafMain],
+                            ['Tp', params.colorLeafTip],
+                            ['Fl', params.colorFlower],
+                            ['Ac', params.colorAccent],
+                          ] as const
+                        ).map(([lbl, hex]) => (
+                          <span
+                            key={lbl}
+                            className="inline-flex items-center gap-1 bg-[#0e1928] border border-slate-800 rounded px-1 py-0.5 font-mono"
+                          >
+                            <span
+                              className="w-2 h-2 rounded-sm border border-white/25"
+                              style={{ backgroundColor: hex }}
+                            />
+                            <span className="text-slate-400">{lbl}</span>
+                            <span className="text-slate-200">{hex}</span>
+                          </span>
+                        ))}
+                      </div>
+
+                      <div className="text-[9px] text-slate-400 font-mono">
+                        H:{params.height}m · R:{params.radius} · stems:{params.customElement.stemCount ?? 1} · lobes:{params.customElement.lobeCount ?? 5} · open:{Math.round((params.customElement.petalOpenness ?? 0.6) * 100)}%
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1747,17 +1883,36 @@ export default function App() {
               {activeTab === 'ai_parts' && (
                 <div className="flex flex-col gap-2.5">
                   <div className="bg-[#131f2e] border border-amber-500/35 rounded-lg p-2.5 space-y-2">
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center justify-between gap-1.5 flex-wrap">
                       <span className="text-[11px] font-semibold text-amber-200 flex items-center gap-1.5">
                         <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                         Biblioteca de Partes ({unifiedParts.length})
                       </span>
-                      <button
-                        onClick={() => setAiModalOpen(true)}
-                        className="px-2 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-200 text-[10px] font-semibold cursor-pointer"
-                      >
-                        + Diseñar con Foto
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const { removedCount, remaining } = deduplicateUnifiedPartsLibrary();
+                            setSavedPartModules(remaining);
+                            setSaveNotice(
+                              removedCount > 0
+                                ? `🧹 Se eliminaron ${removedCount} partes repetidas de la biblioteca.`
+                                : '✅ No hay partes repetidas en la biblioteca.'
+                            );
+                            setTimeout(() => setSaveNotice(null), 3000);
+                          }}
+                          title="Eliminar partes duplicadas o que ya existen en el catálogo nativo"
+                          className="px-2 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-200 text-[10px] font-semibold cursor-pointer"
+                        >
+                          🧹 Limpiar Repetidas
+                        </button>
+                        <button
+                          onClick={() => setAiModalOpen(true)}
+                          className="px-2 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-200 text-[10px] font-semibold cursor-pointer"
+                        >
+                          + Foto
+                        </button>
+                      </div>
                     </div>
                     <p className="text-[10px] text-slate-400 leading-snug">
                       Contiene todas las partes nativas, extraídas de especies, shaders e inventadas por IA. La IA busca aquí antes de crear partes nuevas, guarda las inéditas que genera y los Híbridos toman sus piezas de esta biblioteca.
@@ -1854,141 +2009,140 @@ export default function App() {
                       </button>
                     </div>
                   ) : (
-                    <div className="space-y-2">
-                      {filteredUnifiedParts.slice(0, 90).map((part) => {
-                        const catBadge: Record<UnifiedPartCategory, string> = {
-                          stem: 'Tallo',
-                          canopy: 'Copa/Flor',
-                          surface: 'Superficie',
-                          hanging: 'Colgante',
-                          tip: 'Punta',
-                          basal: 'Base',
-                          bark: 'Corteza',
-                          shader: 'Shader',
-                        };
-                        const sourceBadge =
-                          part.source === 'ai_generated'
-                            ? '✨ Generada IA'
-                            : part.source === 'user_saved'
-                            ? '★ Usuario'
-                            : part.source === 'species_preset'
-                            ? `De: ${part.sourceSpeciesName || 'Especie'}`
-                            : 'Nativa';
+                    (() => {
+                      const catBadge: Record<UnifiedPartCategory, string> = {
+                        stem: 'Tallo',
+                        canopy: 'Copa/Flor',
+                        surface: 'Superficie',
+                        hanging: 'Colgante',
+                        tip: 'Punta',
+                        basal: 'Base',
+                        bark: 'Corteza',
+                        shader: 'Shader',
+                      };
+                      const groupsMap = new Map<string, typeof filteredUnifiedParts>();
+                      for (const pItem of filteredUnifiedParts) {
+                        const gKey = pItem.subGroup || catBadge[pItem.category] || 'Otros';
+                        if (!groupsMap.has(gKey)) groupsMap.set(gKey, []);
+                        groupsMap.get(gKey)!.push(pItem);
+                      }
+                      const groupedList = Array.from(groupsMap.entries());
+                      const expandByDefault =
+                        partSearchQuery.trim().length > 0 || partCategoryFilter !== 'all';
 
-                        return (
-                          <div
-                            key={part.id}
-                            className="rounded-lg border p-2.5 space-y-2 transition-colors bg-[#141d2b] border-slate-800/90 hover:border-slate-700"
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="flex items-center gap-2 min-w-0">
-                                {part.thumbKind ? (
-                                  <PartVisualThumb
-                                    kind={part.thumbKind}
-                                    value={part.thumbValue}
-                                    colorTrunk={part.palette.trunk}
-                                    colorMain={part.palette.main}
-                                    colorTip={part.palette.tip}
-                                    colorFlower={part.palette.flower}
-                                    colorAccent={part.palette.accent}
-                                    size={38}
-                                  />
-                                ) : (
-                                  <div
-                                    className="w-[38px] h-[38px] rounded border border-slate-700 shrink-0"
-                                    style={{
-                                      background: `linear-gradient(135deg, ${part.palette.main} 0%, ${part.palette.tip} 55%, ${part.palette.accent} 100%)`,
-                                    }}
-                                  />
-                                )}
-                                <div className="min-w-0">
-                                  <div className="font-semibold text-[11px] text-slate-100 leading-tight line-clamp-2">
-                                    {part.name}
-                                  </div>
-                                  <div className="flex flex-wrap items-center gap-1 mt-1">
-                                    <span className="px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 text-[9px] font-medium">
-                                      {catBadge[part.category]}
-                                    </span>
-                                    <span
-                                      className={`px-1.5 py-0.2 rounded text-[9px] font-medium truncate max-w-[140px] ${
-                                        part.source === 'ai_generated'
-                                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/35'
-                                          : part.source === 'user_saved'
-                                          ? 'bg-sky-500/20 text-sky-300 border border-sky-500/35'
-                                          : part.source === 'species_preset'
-                                          ? 'bg-emerald-500/15 text-emerald-300'
-                                          : 'bg-slate-800/80 text-slate-400'
-                                      }`}
+                      return (
+                        <div className="space-y-2">
+                          {groupedList.map(([groupTitle, groupItems], gIdx) => (
+                            <details
+                              key={groupTitle}
+                              open={expandByDefault || gIdx < 2}
+                              className="bg-[#111926] border border-slate-800/90 rounded-lg overflow-hidden group"
+                            >
+                              <summary className="px-2.5 py-2 bg-[#162133] cursor-pointer flex items-center justify-between text-[11px] font-semibold text-amber-200 select-none hover:bg-[#1b2940]">
+                                <span className="truncate">{groupTitle}</span>
+                                <span className="flex items-center gap-1.5 shrink-0">
+                                  <span className="px-1.5 py-0.2 rounded bg-slate-900/90 text-emerald-300 text-[9px] font-mono">
+                                    {groupItems.length}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 group-open:rotate-180 transition-transform">
+                                    ▾
+                                  </span>
+                                </span>
+                              </summary>
+                              <div className="p-2 grid grid-cols-2 gap-2">
+                                {groupItems.map((part) => {
+                                  const sourceTag =
+                                    part.source === 'ai_generated'
+                                      ? '✨ IA'
+                                      : part.source === 'user_saved'
+                                      ? '★ User'
+                                      : null;
+
+                                  return (
+                                    <div
+                                      key={part.id}
+                                      onClick={() => {
+                                        setParams((prev) =>
+                                          applyUnifiedPartToTreeParams(
+                                            prev,
+                                            part,
+                                            inferDefaultCustomElement(prev)
+                                          )
+                                        );
+                                        showTempNotice(
+                                          `${catBadge[part.category]} "${part.name}" aplicada al modelo 3D`
+                                        );
+                                      }}
+                                      title={`${part.name} — Haz clic para aplicar al 3D`}
+                                      className="relative group/card rounded-lg border p-1.5 flex flex-col items-center gap-1.5 transition-all cursor-pointer bg-[#141d2b] border-slate-800/90 hover:border-emerald-400/75 hover:bg-[#182538]"
                                     >
-                                      {sourceBadge}
-                                    </span>
-                                  </div>
-                                </div>
+                                      {sourceTag && (
+                                        <span className="absolute top-1 left-1 z-10 px-1 py-0.2 rounded bg-amber-500/25 border border-amber-400/40 text-amber-200 text-[8px] font-bold">
+                                          {sourceTag}
+                                        </span>
+                                      )}
+                                      {part.savedModuleId && (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            const nextModules = deleteSavedPartModule(
+                                              part.savedModuleId!
+                                            );
+                                            setSavedPartModules(nextModules);
+                                            if (part.customElementPatch?.id) {
+                                              setCustomElements(
+                                                deleteCustomElementFromApp(
+                                                  part.customElementPatch.id,
+                                                  part.name
+                                                )
+                                              );
+                                            }
+                                            showTempNotice(
+                                              `Parte "${part.name}" borrada de la Biblioteca`
+                                            );
+                                          }}
+                                          className="absolute top-1 right-1 z-10 w-5 h-5 rounded bg-rose-950/85 hover:bg-rose-700 border border-rose-500/40 text-rose-200 flex items-center justify-center opacity-0 group-hover/card:opacity-100 transition-opacity cursor-pointer"
+                                          title="Eliminar esta parte guardada"
+                                        >
+                                          <Trash2 className="w-2.5 h-2.5" />
+                                        </button>
+                                      )}
+                                      <div className="w-full aspect-square rounded-md bg-[#0a1019] border border-slate-800/80 flex items-center justify-center overflow-hidden p-1">
+                                        {part.thumbKind ? (
+                                          <PartVisualThumb
+                                            kind={part.thumbKind}
+                                            value={part.thumbValue}
+                                            colorTrunk={part.palette.trunk}
+                                            colorMain={part.palette.main}
+                                            colorTip={part.palette.tip}
+                                            colorFlower={part.palette.flower}
+                                            colorAccent={part.palette.accent}
+                                            size={88}
+                                          />
+                                        ) : (
+                                          <div
+                                            className="w-16 h-16 rounded-full border border-white/20 shadow-inner"
+                                            style={{
+                                              background: `radial-gradient(circle at 30% 30%, ${part.palette.tip} 0%, ${part.palette.main} 45%, ${part.palette.flower} 75%, ${part.palette.accent} 100%)`,
+                                            }}
+                                          />
+                                        )}
+                                      </div>
+                                      <div className="w-full text-center px-0.5">
+                                        <div className="font-semibold text-[10px] text-slate-100 leading-tight line-clamp-2 group-hover/card:text-emerald-200">
+                                          {part.name}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
                               </div>
-                            </div>
-
-                            <p className="text-[10px] text-slate-400 leading-snug line-clamp-2">
-                              {part.description}
-                            </p>
-
-                            <div className="flex items-center gap-1.5 pt-0.5">
-                              <button
-                                onClick={() => {
-                                  if (part.savedModuleId && part.customElementPatch && part.customElementPatch.stemStructure && part.customElementPatch.canopyElement && part.category === 'canopy') {
-                                    // If full saved custom module, apply full or apply part cleanly
-                                    setParams((prev) =>
-                                      applyUnifiedPartToTreeParams(
-                                        prev,
-                                        part,
-                                        inferDefaultCustomElement(prev)
-                                      )
-                                    );
-                                  } else {
-                                    setParams((prev) =>
-                                      applyUnifiedPartToTreeParams(
-                                        prev,
-                                        part,
-                                        inferDefaultCustomElement(prev)
-                                      )
-                                    );
-                                  }
-                                  showTempNotice(`${catBadge[part.category]} "${part.name}" aplicada al modelo 3D`);
-                                }}
-                                className="flex-1 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-500/40 text-emerald-200 text-[11px] font-semibold cursor-pointer"
-                              >
-                                Aplicar {catBadge[part.category]}
-                              </button>
-                              {part.savedModuleId && (
-                                <button
-                                  onClick={() => {
-                                    const nextModules = deleteSavedPartModule(part.savedModuleId!);
-                                    setSavedPartModules(nextModules);
-                                    if (part.customElementPatch?.id) {
-                                      setCustomElements(
-                                        deleteCustomElementFromApp(
-                                          part.customElementPatch.id,
-                                          part.name
-                                        )
-                                      );
-                                    }
-                                    showTempNotice(`Parte "${part.name}" borrada de la Biblioteca`);
-                                  }}
-                                  className="px-2.5 py-1 rounded bg-rose-950/60 hover:bg-rose-900/80 border border-rose-500/40 text-rose-300 text-[11px] font-medium flex items-center gap-1 cursor-pointer shrink-0"
-                                  title="Eliminar esta parte guardada"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                      {filteredUnifiedParts.length > 90 && (
-                        <div className="text-center text-[10px] text-slate-400 py-2">
-                          Mostrando 90 de {filteredUnifiedParts.length} partes. Usa el buscador o los filtros de categoría.
+                            </details>
+                          ))}
                         </div>
-                      )}
-                    </div>
+                      );
+                    })()
                   )}
                 </div>
               )}
@@ -3395,61 +3549,79 @@ export default function App() {
                                     Cerrar ✕
                                   </button>
                                 </div>
-                                <div className="grid grid-cols-3 gap-1.5 max-h-56 overflow-y-auto studio-scroll pr-0.5">
-                                  {pickerOptions[activePartPicker].map((opt) => {
-                                    const selected = activeSlot.value === opt.id;
-                                    return (
-                                      <button
-                                        key={opt.id}
-                                        onClick={() => {
-                                          if (activePartPicker === 'stem') {
-                                            updateCustomPart({ stemStructure: opt.id as StemStructureType });
-                                          } else if (activePartPicker === 'canopy') {
-                                            const nextCanopy = opt.id as CanopyElementType;
-                                            updateCustomPart({
-                                              canopyElement: nextCanopy,
-                                              synthesizedHeadTopology:
-                                                nextCanopy === 'procedural_lathe_head'
-                                                  ? 'revolved_lathe_chalice'
-                                                  : nextCanopy === 'custom_spline_leaf_crown'
-                                                  ? 'spline_petal_corona'
-                                                  : 'none',
-                                            });
-                                          } else if (activePartPicker === 'surface') {
-                                            updateCustomPart({ surfaceElement: opt.id as SurfaceElementType });
-                                          } else if (activePartPicker === 'hanging') {
-                                            updateCustomPart({ hangingElement: opt.id as HangingElementType });
-                                          } else if (activePartPicker === 'tip') {
-                                            updateCustomPart({ synthesizedTipPrimitive: opt.id as SynthesizedTipPrimitive });
-                                          } else if (activePartPicker === 'basal') {
-                                            updateCustomPart({ synthesizedBasalFoliage: opt.id as SynthesizedBasalFoliageType });
-                                          } else if (activePartPicker === 'bark') {
-                                            updateParam('barkType', opt.id as BarkType);
-                                          }
-                                        }}
-                                        className={`flex flex-col items-center gap-1 p-1.5 rounded border text-center cursor-pointer transition-colors ${
-                                          selected
-                                            ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200'
-                                            : 'bg-[#111926] border-slate-800 hover:border-slate-600 text-slate-300'
-                                        }`}
-                                        title={opt.label}
-                                      >
-                                        <PartVisualThumb
-                                          kind={activePartPicker}
-                                          value={opt.id}
-                                          colorTrunk={params.colorTrunk}
-                                          colorMain={params.colorLeafMain}
-                                          colorTip={params.colorLeafTip}
-                                          colorFlower={params.colorFlower}
-                                          colorAccent={params.colorAccent}
-                                          size={38}
-                                        />
-                                        <span className="text-[9px] leading-tight line-clamp-2 w-full">
-                                          {opt.label}
-                                        </span>
-                                      </button>
-                                    );
-                                  })}
+                                <div className="space-y-2 max-h-64 overflow-y-auto studio-scroll pr-0.5">
+                                  {(() => {
+                                    const subMap = new Map<string, Array<{ id: string; label: string }>>();
+                                    for (const opt of pickerOptions[activePartPicker]) {
+                                      const gTitle = getPartSubGroup(activePartPicker, opt.id);
+                                      if (!subMap.has(gTitle)) subMap.set(gTitle, []);
+                                      subMap.get(gTitle)!.push(opt);
+                                    }
+                                    return Array.from(subMap.entries()).map(([gTitle, opts]) => (
+                                      <div key={gTitle} className="space-y-1">
+                                        <div className="text-[9px] font-semibold uppercase tracking-wider text-emerald-300/90 px-1 pt-0.5 flex items-center justify-between border-b border-slate-800/80 pb-0.5">
+                                          <span>{gTitle}</span>
+                                          <span className="text-slate-500 font-mono">{opts.length}</span>
+                                        </div>
+                                        <div className="grid grid-cols-3 gap-1.5">
+                                          {opts.map((opt) => {
+                                            const selected = activeSlot.value === opt.id;
+                                            return (
+                                              <button
+                                                key={opt.id}
+                                                onClick={() => {
+                                                  if (activePartPicker === 'stem') {
+                                                    updateCustomPart({ stemStructure: opt.id as StemStructureType });
+                                                  } else if (activePartPicker === 'canopy') {
+                                                    const nextCanopy = opt.id as CanopyElementType;
+                                                    updateCustomPart({
+                                                      canopyElement: nextCanopy,
+                                                      synthesizedHeadTopology:
+                                                        nextCanopy === 'procedural_lathe_head'
+                                                          ? 'revolved_lathe_chalice'
+                                                          : nextCanopy === 'custom_spline_leaf_crown'
+                                                          ? 'spline_petal_corona'
+                                                          : 'none',
+                                                    });
+                                                  } else if (activePartPicker === 'surface') {
+                                                    updateCustomPart({ surfaceElement: opt.id as SurfaceElementType });
+                                                  } else if (activePartPicker === 'hanging') {
+                                                    updateCustomPart({ hangingElement: opt.id as HangingElementType });
+                                                  } else if (activePartPicker === 'tip') {
+                                                    updateCustomPart({ synthesizedTipPrimitive: opt.id as SynthesizedTipPrimitive });
+                                                  } else if (activePartPicker === 'basal') {
+                                                    updateCustomPart({ synthesizedBasalFoliage: opt.id as SynthesizedBasalFoliageType });
+                                                  } else if (activePartPicker === 'bark') {
+                                                    updateParam('barkType', opt.id as BarkType);
+                                                  }
+                                                }}
+                                                className={`flex flex-col items-center gap-1 p-1.5 rounded border text-center cursor-pointer transition-colors ${
+                                                  selected
+                                                    ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200'
+                                                    : 'bg-[#111926] border-slate-800 hover:border-slate-600 text-slate-300'
+                                                }`}
+                                                title={opt.label}
+                                              >
+                                                <PartVisualThumb
+                                                  kind={activePartPicker}
+                                                  value={opt.id}
+                                                  colorTrunk={params.colorTrunk}
+                                                  colorMain={params.colorLeafMain}
+                                                  colorTip={params.colorLeafTip}
+                                                  colorFlower={params.colorFlower}
+                                                  colorAccent={params.colorAccent}
+                                                  size={38}
+                                                />
+                                                <span className="text-[9px] leading-tight line-clamp-2 w-full">
+                                                  {opt.label}
+                                                </span>
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    ));
+                                  })()}
                                 </div>
                               </div>
                             )}
@@ -5011,93 +5183,28 @@ export default function App() {
             quality={quality}
             onStatsUpdate={setStats}
             onPartClick={handleViewportPartClick}
+            selectedPart={highlightedPart}
+            onBackgroundClick={() => setHighlightedPart(null)}
           />
 
-          {/* Quick Botanical HUD Overlay when clicking parts directly in 3D Viewport */}
+          {/* Unobtrusive 1-Line Selection Pill at Top-Right Corner (All Controls Live in the Left Sidebar) */}
           {highlightedPart && (
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-[#0c1624]/92 backdrop-blur-md border border-emerald-400/60 rounded-xl px-4 py-2 flex items-center gap-3.5 shadow-2xl z-30 pointer-events-auto">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-300">
-                {highlightedPart === 'canopy' && <span>🌸 Flor / Copa</span>}
-                {highlightedPart === 'trunk' && <span>🪵 Tronco / Tallo</span>}
-                {highlightedPart === 'roots' && <span>🌱 Raíces / Base</span>}
-                {highlightedPart === 'ecosystem_base' && <span>🏔️ Base Ecosistema</span>}
-              </div>
-
-              {highlightedPart === 'canopy' && (
-                <div className="flex items-center gap-2 pl-2 border-l border-slate-700/80">
-                  <span className="text-[10px] text-slate-300 font-medium">Apertura:</span>
-                  <div className="flex items-center gap-1">
-                    {[
-                      { label: '0%', val: 0 },
-                      { label: '50%', val: 0.5 },
-                      { label: '100%', val: 1 },
-                    ].map((p) => (
-                      <button
-                        key={p.label}
-                        type="button"
-                        onClick={() => {
-                          updateCustomPart({ petalOpenness: p.val });
-                          updateParam('petalOpenness', p.val);
-                        }}
-                        className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#142232] hover:bg-pink-600 text-pink-200 border border-pink-500/40 cursor-pointer transition-colors"
-                      >
-                        {p.label}
-                      </button>
-                    ))}
-                  </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    step={2}
-                    value={Math.round(
-                      (params.customElement?.petalOpenness ?? params.petalOpenness ?? 0.65) * 100
-                    )}
-                    onChange={(e) => {
-                      const val = Number((Number(e.target.value) / 100).toFixed(2));
-                      updateCustomPart({ petalOpenness: val });
-                      updateParam('petalOpenness', val);
-                    }}
-                    className="w-24 accent-pink-500 cursor-pointer h-1.5 bg-slate-700 rounded-lg ml-1"
-                  />
-                  <span className="text-[10px] font-mono text-pink-300 font-bold w-8 text-right">
-                    {Math.round(
-                      (params.customElement?.petalOpenness ?? params.petalOpenness ?? 0.65) * 100
-                    )}%
-                  </span>
-                </div>
-              )}
-
-              {highlightedPart === 'trunk' && (
-                <div className="flex items-center gap-2 pl-2 border-l border-slate-700/80">
-                  <span className="text-[10px] text-slate-300">Radio:</span>
-                  <input
-                    type="range"
-                    min={0.1}
-                    max={1.8}
-                    step={0.05}
-                    value={params.radius}
-                    onChange={(e) => updateParam('radius', Number(e.target.value))}
-                    className="w-16 accent-emerald-500 cursor-pointer h-1.5 bg-slate-700 rounded-lg"
-                  />
-                  <span className="text-[10px] text-slate-300 ml-1">Altura:</span>
-                  <input
-                    type="range"
-                    min={1}
-                    max={15}
-                    step={0.5}
-                    value={params.height}
-                    onChange={(e) => updateParam('height', Number(e.target.value))}
-                    className="w-16 accent-emerald-500 cursor-pointer h-1.5 bg-slate-700 rounded-lg"
-                  />
-                </div>
-              )}
-
+            <div className="absolute top-2.5 right-3 bg-[#0c1420]/90 backdrop-blur-sm border border-rose-500/70 rounded-full px-2.5 py-1 shadow-lg z-20 pointer-events-auto flex items-center gap-2 text-[10px]">
+              <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+              <span className="font-semibold text-rose-200">
+                {highlightedPart === 'canopy'
+                  ? 'Copa / Flor'
+                  : highlightedPart === 'trunk'
+                  ? 'Tronco / Corteza'
+                  : highlightedPart === 'roots'
+                  ? 'Raíces / Colgantes'
+                  : 'Base Ecosistema'}
+              </span>
               <button
                 type="button"
                 onClick={() => setHighlightedPart(null)}
-                className="text-[11px] text-slate-400 hover:text-white cursor-pointer ml-1"
-                title="Cerrar HUD"
+                className="text-rose-300 hover:text-white cursor-pointer pl-0.5"
+                title="Deseleccionar (o pulsa en el fondo)"
               >
                 ✕
               </button>
@@ -5408,6 +5515,180 @@ export default function App() {
                     </p>
                   </>
                 )}
+              </div>
+
+              {/* Step 1 Visual Diagnostic Inspector: see EXACTLY what the 2D scanner extracted BEFORE sending to AI */}
+              {aiPreparedImage && (
+                <div className="bg-[#090f18] border border-cyan-500/35 rounded-lg p-2.5 space-y-2 text-left">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-cyan-300">
+                      🔬 Diagnóstico Paso 1: Datos Extraídos de la Foto ({aiPreparedImage.scanResolution || 'HD'})
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const diagPayload = {
+                          scanResolution: aiPreparedImage.scanResolution,
+                          foregroundCoveragePct: aiPreparedImage.foregroundCoveragePct,
+                          visionFeatures: aiPreparedImage.visionFeatures,
+                          photoSculptSummary: {
+                            aspectRatio: aiPreparedImage.photoSculptData.aspectRatio,
+                            stemTopFrac: aiPreparedImage.photoSculptData.stemTopFrac,
+                            maxBranchColumns: aiPreparedImage.photoSculptData.maxBranchColumns,
+                            hasMultiBranchGaps: aiPreparedImage.photoSculptData.hasMultiBranchGaps,
+                            isRadialLobes: aiPreparedImage.photoSculptData.isRadialLobes,
+                            lobeCount: aiPreparedImage.photoSculptData.lobeCount,
+                            slicesCount: aiPreparedImage.photoSculptData.slices.length,
+                            colorGrid: `${aiPreparedImage.photoSculptData.colorGridW}x${aiPreparedImage.photoSculptData.colorGridH}`,
+                          },
+                        };
+                        navigator.clipboard?.writeText(JSON.stringify(diagPayload, null, 2));
+                      }}
+                      className="px-2 py-0.5 rounded bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/40 text-[10px] font-medium text-cyan-200 cursor-pointer"
+                    >
+                      Copiar JSON
+                    </button>
+                  </div>
+
+                  {/* 3-Column Visual Comparison: Original vs Flood-Fill+32 Slices vs 32x32 Color Map */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="bg-[#0d1522] rounded p-1 border border-slate-800 text-center">
+                      <img
+                        src={aiPreparedImage.previewDataUrl}
+                        alt="Original"
+                        className="w-full h-24 object-contain rounded bg-slate-950"
+                      />
+                      <div className="text-[9px] text-slate-400 mt-1">Foto Original</div>
+                    </div>
+                    <div className="bg-[#0d1522] rounded p-1 border border-slate-800 text-center">
+                      {aiPreparedImage.debugMaskDataUrl ? (
+                        <img
+                          src={aiPreparedImage.debugMaskDataUrl}
+                          alt="Máscara Flood-Fill y 32 Cortes"
+                          className="w-full h-24 object-contain rounded bg-slate-950"
+                        />
+                      ) : (
+                        <div className="w-full h-24 flex items-center justify-center text-[10px] text-slate-500">N/A</div>
+                      )}
+                      <div className="text-[9px] text-emerald-300 mt-1">
+                        Flood-Fill + {aiPreparedImage.photoSculptData.slices.length} Cortes
+                      </div>
+                    </div>
+                    <div className="bg-[#0d1522] rounded p-1 border border-slate-800 text-center">
+                      {aiPreparedImage.debugColorGridDataUrl ? (
+                        <img
+                          src={aiPreparedImage.debugColorGridDataUrl}
+                          alt="Mapa cromático 32x32"
+                          style={{ imageRendering: 'pixelated' }}
+                          className="w-full h-24 object-contain rounded bg-slate-950"
+                        />
+                      ) : (
+                        <div className="w-full h-24 flex items-center justify-center text-[10px] text-slate-500">N/A</div>
+                      )}
+                      <div className="text-[9px] text-amber-300 mt-1">
+                        Color {aiPreparedImage.photoSculptData.colorGridW}×{aiPreparedImage.photoSculptData.colorGridH}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Key Extracted Morphological Metrics */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[10px]">
+                    <div className="bg-[#0e1726] px-2 py-1 rounded border border-slate-800">
+                      <span className="text-slate-500 block">Arquetipo 2D</span>
+                      <span className="text-slate-200 font-semibold truncate block">
+                        {aiPreparedImage.visionFeatures.detectedArchetype}
+                      </span>
+                    </div>
+                    <div className="bg-[#0e1726] px-2 py-1 rounded border border-slate-800">
+                      <span className="text-slate-500 block">Sujeto / Fondo</span>
+                      <span className="text-emerald-300 font-semibold">
+                        {aiPreparedImage.foregroundCoveragePct ?? '?'}% primer plano
+                      </span>
+                    </div>
+                    <div className="bg-[#0e1726] px-2 py-1 rounded border border-slate-800">
+                      <span className="text-slate-500 block">Columnas / Ramas</span>
+                      <span className="text-cyan-300 font-semibold">
+                        {aiPreparedImage.photoSculptData.maxBranchColumns ?? 1} cols ·{' '}
+                        {aiPreparedImage.photoSculptData.hasMultiBranchGaps ? 'Multi-rama' : 'Compacto'}
+                      </span>
+                    </div>
+                    <div className="bg-[#0e1726] px-2 py-1 rounded border border-slate-800">
+                      <span className="text-slate-500 block">Fin Tallo / Ratio</span>
+                      <span className="text-amber-300 font-semibold">
+                        {Math.round((aiPreparedImage.photoSculptData.stemTopFrac ?? 0.28) * 100)}% · H/W{' '}
+                        {aiPreparedImage.photoSculptData.aspectRatio}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 5 Extracted Palette Swatches */}
+                  <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                    {(
+                      [
+                        ['Tronco', aiPreparedImage.visionFeatures.colorTrunk],
+                        ['Principal', aiPreparedImage.visionFeatures.colorLeafMain],
+                        ['Punta', aiPreparedImage.visionFeatures.colorLeafTip],
+                        ['Flor', aiPreparedImage.visionFeatures.colorFlower],
+                        ['Acento', aiPreparedImage.visionFeatures.colorAccent],
+                      ] as const
+                    ).map(([label, hex]) => (
+                      <div
+                        key={label}
+                        className="flex items-center gap-1 bg-[#0e1726] border border-slate-800 rounded px-1.5 py-0.5"
+                      >
+                        <span
+                          className="w-2.5 h-2.5 rounded-sm border border-white/20 shrink-0"
+                          style={{ backgroundColor: hex }}
+                        />
+                        <span className="text-slate-400">{label}:</span>
+                        <span className="font-mono text-slate-200">{hex}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="text-[9px] text-slate-500 leading-snug">
+                    Leyenda máscara: <span className="text-emerald-300">verde</span> = 1 bloque,{' '}
+                    <span className="text-cyan-300">cian</span> = ramas separadas detectadas,{' '}
+                    <span className="text-amber-300">amarillo</span> = corte tallo/copa.
+                  </div>
+                </div>
+              )}
+
+              {/* Direct Photo-to-3D Reconstruction vs Catalog Assembly Toggle */}
+              <div className="bg-[#0a1019] border border-emerald-500/35 rounded-lg p-2.5 space-y-1.5">
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-300">
+                  Modo de Generación 3D
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setAiDirectPhotoSculpt(true)}
+                    className={`px-2 py-1.5 rounded text-[11px] font-semibold border cursor-pointer transition-colors text-left ${
+                      aiDirectPhotoSculpt
+                        ? 'bg-emerald-500/25 border-emerald-400 text-emerald-200'
+                        : 'bg-[#111926] border-slate-700 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    🎯 Modo Híbrido Fiel a Foto
+                    <div className="text-[9px] font-normal text-slate-300/80 mt-0.5">
+                      Anatomía IA + envolvente 32 cortes + color 32×32
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAiDirectPhotoSculpt(false)}
+                    className={`px-2 py-1.5 rounded text-[11px] font-semibold border cursor-pointer transition-colors text-left ${
+                      !aiDirectPhotoSculpt
+                        ? 'bg-amber-500/25 border-amber-400 text-amber-200'
+                        : 'bg-[#111926] border-slate-700 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    🧩 Piezas del Catálogo IA
+                    <div className="text-[9px] font-normal text-slate-300/80 mt-0.5">
+                      Ensambla partes modulares existentes + shaders
+                    </div>
+                  </button>
+                </div>
               </div>
 
               {/* Optional Refinement Notes */}

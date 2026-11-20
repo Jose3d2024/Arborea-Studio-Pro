@@ -1,7 +1,10 @@
-import { DEFAULT_TREE_PARAMS, SPECIES_CATALOG, BACKGROUND_PRESETS } from '../data/speciesCatalog';
+import { DEFAULT_TREE_PARAMS, BACKGROUND_PRESETS } from '../data/speciesCatalog';
 import {
   CustomBotanicalElement,
   EcosystemBaseType,
+  PhotoSculptBlueprint,
+  PhotoSculptInterval,
+  PhotoSculptSlice,
   SpeciesPreset,
   TreeParams,
 } from '../types/botany';
@@ -178,41 +181,48 @@ export async function detectLocalAiModels(
     ''
   );
 
-  // 1. Try direct browser fetch to localhost (in case user has Ollama/LM Studio running on their machine)
-  try {
-    if (cfg.provider === 'ollama') {
-      const r = await fetch(`${base}/api/tags`, { signal: AbortSignal.timeout(2500) });
-      if (r.ok) {
-        const data = await r.json();
-        const models: string[] = Array.isArray(data?.models)
-          ? data.models.map((m: any) => String(m.name || m.model || '')).filter(Boolean)
-          : [];
-        return {
-          ok: true,
-          models,
-          message:
-            models.length > 0
-              ? `Conectado a Ollama (${models.length} modelos detectados)`
-              : 'Conectado a Ollama (0 modelos instalados; ejecuta "ollama pull llama3.2-vision")',
-        };
+  // 1. Try direct browser fetch to localhost (skip on HTTPS -> http:// to avoid Mixed Content delay)
+  const isMixedContentBlocked =
+    typeof window !== 'undefined' &&
+    window.location?.protocol === 'https:' &&
+    base.toLowerCase().startsWith('http://');
+
+  if (!isMixedContentBlocked) {
+    try {
+      if (cfg.provider === 'ollama') {
+        const r = await fetch(`${base}/api/tags`, { signal: AbortSignal.timeout(2500) });
+        if (r.ok) {
+          const data = await r.json();
+          const models: string[] = Array.isArray(data?.models)
+            ? data.models.map((m: any) => String(m.name || m.model || '')).filter(Boolean)
+            : [];
+          return {
+            ok: true,
+            models,
+            message:
+              models.length > 0
+                ? `Conectado a Ollama (${models.length} modelos detectados)`
+                : 'Conectado a Ollama (0 modelos instalados; ejecuta "ollama pull llama3.2-vision")',
+          };
+        }
+      } else {
+        const modelsUrl = base.endsWith('/v1') ? `${base}/models` : `${base}/v1/models`;
+        const r = await fetch(modelsUrl, { signal: AbortSignal.timeout(2500) });
+        if (r.ok) {
+          const data = await r.json();
+          const models: string[] = Array.isArray(data?.data)
+            ? data.data.map((m: any) => String(m.id || '')).filter(Boolean)
+            : [];
+          return {
+            ok: true,
+            models,
+            message: `Conectado al servidor local (${models.length} modelos detectados)`,
+          };
+        }
       }
-    } else {
-      const modelsUrl = base.endsWith('/v1') ? `${base}/models` : `${base}/v1/models`;
-      const r = await fetch(modelsUrl, { signal: AbortSignal.timeout(2500) });
-      if (r.ok) {
-        const data = await r.json();
-        const models: string[] = Array.isArray(data?.data)
-          ? data.data.map((m: any) => String(m.id || '')).filter(Boolean)
-          : [];
-        return {
-          ok: true,
-          models,
-          message: `Conectado al servidor local (${models.length} modelos detectados)`,
-        };
-      }
+    } catch {
+      // Browser direct fetch may be blocked by CORS if OLLAMA_ORIGINS is not set; try backend proxy next
     }
-  } catch {
-    // Browser direct fetch may be blocked by CORS if OLLAMA_ORIGINS is not set; try backend proxy next
   }
 
   // 2. Try via the Express backend proxy `/api/ai/local-models` (works with zero CORS when running locally on PC)
@@ -304,6 +314,11 @@ export interface PreparedPlantImage {
   mimeType: 'image/jpeg' | 'image/png' | 'image/webp';
   fileName: string;
   visionFeatures: ImageVisionFeatures;
+  photoSculptData: PhotoSculptBlueprint;
+  debugMaskDataUrl?: string;
+  debugColorGridDataUrl?: string;
+  scanResolution?: string;
+  foregroundCoveragePct?: number;
 }
 
 export interface AiPlantDesignResult {
@@ -412,16 +427,48 @@ export function loadSavedCustomElements(): CustomBotanicalElement[] {
   }
 }
 
+function safePersistListWithQuotaFallback<T>(
+  storageKey: string,
+  items: T[],
+  compactOlderItem?: (item: T) => T
+): T[] {
+  const tryWrite = (list: T[]): boolean => {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(list));
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  if (tryWrite(items)) return items;
+
+  // QuotaExceededError fallback #1: trim history to 25 most recent items
+  const trimmed25 = items.slice(0, 25);
+  if (tryWrite(trimmed25)) return trimmed25;
+
+  // QuotaExceededError fallback #2: compact bulky photoSculptData on older items (keep newest 6 intact)
+  if (compactOlderItem) {
+    const compacted = trimmed25.map((item, idx) => (idx < 6 ? item : compactOlderItem(item)));
+    if (tryWrite(compacted)) return compacted;
+    const compacted12 = compacted.slice(0, 12);
+    if (tryWrite(compacted12)) return compacted12;
+  }
+
+  // Final fallback: keep newest 10 items
+  const trimmed10 = items.slice(0, 10);
+  tryWrite(trimmed10);
+  return trimmed10;
+}
+
 export function saveCustomElementToApp(el: CustomBotanicalElement): CustomBotanicalElement[] {
   const upgradedEl = upgradeSynthesizedCustomElement(el);
   const existing = loadSavedCustomElements().filter((item) => item.id !== upgradedEl.id);
   const next = [upgradedEl, ...existing].slice(0, 60);
-  try {
-    localStorage.setItem(CUSTOM_ELEMENTS_STORAGE_KEY, JSON.stringify(next));
-  } catch {
-    // ignore storage quota errors
-  }
-  return next;
+  return safePersistListWithQuotaFallback(CUSTOM_ELEMENTS_STORAGE_KEY, next, (item) => {
+    const { photoSculptData: _dropped, ...rest } = item;
+    return rest;
+  });
 }
 
 export function deleteCustomElementFromApp(elementId: string, matchName?: string): CustomBotanicalElement[] {
@@ -478,12 +525,17 @@ export function loadSavedCustomSpecies(): SpeciesPreset[] {
 export function saveCustomSpeciesToApp(preset: SpeciesPreset): SpeciesPreset[] {
   const existing = loadSavedCustomSpecies().filter((item) => item.id !== preset.id);
   const next = [preset, ...existing].slice(0, 60);
-  try {
-    localStorage.setItem(CUSTOM_SPECIES_STORAGE_KEY, JSON.stringify(next));
-  } catch {
-    // ignore storage quota errors
-  }
-  return next;
+  return safePersistListWithQuotaFallback(CUSTOM_SPECIES_STORAGE_KEY, next, (sp) => {
+    if (!sp.params?.customElement?.photoSculptData) return sp;
+    const { photoSculptData: _dropped, ...restEl } = sp.params.customElement;
+    return {
+      ...sp,
+      params: {
+        ...sp.params,
+        customElement: restEl,
+      },
+    };
+  });
 }
 
 export function deleteCustomSpeciesFromApp(presetId: string): SpeciesPreset[] {
@@ -523,6 +575,15 @@ export function loadSavedPartsModules(): SavedPartModule[] {
   } catch {
     return [];
   }
+}
+
+export function replaceSavedPartModules(next: SavedPartModule[]): SavedPartModule[] {
+  try {
+    localStorage.setItem(SAVED_PARTS_KEY, JSON.stringify(next));
+  } catch {
+    // ignore storage quota errors
+  }
+  return next;
 }
 
 export function saveCustomPartModule(
@@ -1165,6 +1226,623 @@ function extractVisionFeaturesFromCanvas(
 }
 
 
+/**
+ * Direct Image-to-3D Reconstruction Extractor (v2 — Border Flood-Fill + Multi-Interval Raycasting):
+ * 1) Runs a 4-connected adaptive Flood-Fill BFS from all 4 image edges to remove sky gradients,
+ *    studio shadows, and backgrounds WITHOUT punching holes inside the plant subject.
+ * 2) Scans 16 vertical slices to extract MULTIPLE separated horizontal matter intervals per height
+ *    (detecting cactus arms, bifurcated trunks, open branches, and gaps!).
+ * 3) Samples a tight 16x16 foreground pixel color map to wrap exact photo colors onto 3D geometry.
+ */
+function extractPhotoSculptBlueprint(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  vf: ImageVisionFeatures
+): PhotoSculptBlueprint {
+  const imgData = ctx.getImageData(0, 0, w, h).data;
+
+  // 1. Full HD native resolution up to 1024x1024 (1:1 pixel accuracy) for Border Flood-Fill & fine-stem/spine detection
+  const GW = Math.min(1024, Math.max(48, w));
+  const GH = Math.min(1024, Math.max(48, h));
+  const gridR = new Float32Array(GW * GH);
+  const gridG = new Float32Array(GW * GH);
+  const gridB = new Float32Array(GW * GH);
+  const gridA = new Uint8Array(GW * GH);
+
+  for (let gy = 0; gy < GH; gy++) {
+    const sy = Math.min(h - 1, Math.floor((gy / GH) * h));
+    for (let gx = 0; gx < GW; gx++) {
+      const sx = Math.min(w - 1, Math.floor((gx / GW) * w));
+      const pIdx = (sy * w + sx) * 4;
+      const gIdx = gy * GW + gx;
+      gridR[gIdx] = imgData[pIdx];
+      gridG[gIdx] = imgData[pIdx + 1];
+      gridB[gIdx] = imgData[pIdx + 2];
+      gridA[gIdx] = imgData[pIdx + 3];
+    }
+  }
+
+  // Sample the 4 corners first (cleanest background anchors; avoid top/bottom midpoints where tall plants touch the frame!)
+  const cornerCoords: [number, number][] = [
+    [1, 1],
+    [GW - 2, 1],
+    [1, GH - 2],
+    [GW - 2, GH - 2],
+    [1, Math.floor(GH * 0.5)],
+    [GW - 2, Math.floor(GH * 0.5)],
+  ];
+  const borderSeedsR: number[] = [];
+  const borderSeedsG: number[] = [];
+  const borderSeedsB: number[] = [];
+  for (const [sx, sy] of cornerCoords) {
+    const cx = Math.max(0, Math.min(GW - 1, sx));
+    const cy = Math.max(0, Math.min(GH - 1, sy));
+    const idx = cy * GW + cx;
+    if (gridA[idx] > 160) {
+      borderSeedsR.push(gridR[idx]);
+      borderSeedsG.push(gridG[idx]);
+      borderSeedsB.push(gridB[idx]);
+    }
+  }
+
+  // Returns both Euclidean RGB distance AND illumination-invariant chroma distance to the nearest border seed!
+  // This lets smooth lighting gradients (bright->dark beige wall) pass while blocking hue shifts (green bokeh -> lavender petals)!
+  const distToNearestBorderSeed = (r: number, g: number, b: number): { rgb: number; chroma: number } => {
+    if (borderSeedsR.length === 0) return { rgb: 999, chroma: 999 };
+    const lum = (r + g + b) / 3;
+    const cr = r - lum;
+    const cg = g - lum;
+    const cb = b - lum;
+    let bestRgb = 999;
+    let bestChroma = 999;
+    for (let k = 0; k < borderSeedsR.length; k++) {
+      const sr = borderSeedsR[k];
+      const sg = borderSeedsG[k];
+      const sb = borderSeedsB[k];
+      const dRgb = Math.hypot(r - sr, g - sg, b - sb);
+      const sLum = (sr + sg + sb) / 3;
+      const dChr = Math.hypot(cr - (sr - sLum), cg - (sg - sLum), cb - (sb - sLum));
+      if (dRgb < bestRgb) {
+        bestRgb = dRgb;
+        bestChroma = dChr;
+      }
+    }
+    return { rgb: bestRgb, chroma: bestChroma };
+  };
+
+  const pixelSat = (r: number, g: number, b: number): number => {
+    const mx = Math.max(r, g, b);
+    if (mx <= 1) return 0;
+    const mn = Math.min(r, g, b);
+    return (mx - mn) / mx;
+  };
+
+  const isBg = new Uint8Array(GW * GH);
+  const queue = new Int32Array(GW * GH);
+  let qHead = 0;
+  let qTail = 0;
+
+  // Seed perimeter pixels that belong to the background (skipping foreground petals/stems touching top/bottom frame)
+  const seedBorderCell = (gx: number, gy: number) => {
+    const idx = gy * GW + gx;
+    if (isBg[idx]) return;
+    if (gridA[idx] < 80) {
+      isBg[idx] = 1;
+      queue[qTail++] = idx;
+      return;
+    }
+    const r = gridR[idx];
+    const g = gridG[idx];
+    const b = gridB[idx];
+    const d = distToNearestBorderSeed(r, g, b);
+    if (d.rgb <= 46 && d.chroma <= 24) {
+      isBg[idx] = 1;
+      queue[qTail++] = idx;
+    }
+  };
+
+  // Always seed the 4 corners first
+  seedBorderCell(0, 0);
+  seedBorderCell(GW - 1, 0);
+  seedBorderCell(0, GH - 1);
+  seedBorderCell(GW - 1, GH - 1);
+  for (let x = 0; x < GW; x++) {
+    seedBorderCell(x, 0);
+    seedBorderCell(x, GH - 1);
+  }
+  for (let y = 1; y < GH - 1; y++) {
+    seedBorderCell(0, y);
+    seedBorderCell(GW - 1, y);
+  }
+
+  // Pass 1: Illumination-Gradient & Chroma-Locked BFS Flood-Fill
+  // Absorbs smooth wall/sky brightness gradients (low chroma shift), stops cold on hue changes (e.g. lavender petals on green bokeh)!
+  const dxArr = [-1, 1, 0, 0];
+  const dyArr = [0, 0, -1, 1];
+
+  while (qHead < qTail) {
+    const cur = queue[qHead++];
+    const cx = cur % GW;
+    const cy = (cur - cx) / GW;
+    const cr = gridR[cur];
+    const cg = gridG[cur];
+    const cb = gridB[cur];
+
+    for (let d = 0; d < 4; d++) {
+      const nx = cx + dxArr[d];
+      const ny = cy + dyArr[d];
+      if (nx < 0 || nx >= GW || ny < 0 || ny >= GH) continue;
+      const nIdx = ny * GW + nx;
+      if (isBg[nIdx]) continue;
+
+      if (gridA[nIdx] < 80) {
+        isBg[nIdx] = 1;
+        queue[qTail++] = nIdx;
+        continue;
+      }
+
+      const nr = gridR[nIdx];
+      const ng = gridG[nIdx];
+      const nb = gridB[nIdx];
+      const dNeighbor = Math.hypot(nr - cr, ng - cg, nb - cb);
+      const dist = distToNearestBorderSeed(nr, ng, nb);
+      const sat = pixelSat(nr, ng, nb);
+
+      if (
+        (dNeighbor <= 13 && sat < 0.44 && dist.rgb <= 92 && dist.chroma <= 26) ||
+        (dNeighbor <= 20 && dist.rgb <= 54 && dist.chroma <= 22) ||
+        (dist.rgb <= 24 && dist.chroma <= 16)
+      ) {
+        isBg[nIdx] = 1;
+        queue[qTail++] = nIdx;
+      }
+    }
+  }
+
+  // Pass 2: Clean enclosed background pockets trapped inside bonsai loops & between branches (strict chroma lock!)
+  for (let y = 1; y < GH - 1; y++) {
+    for (let x = 1; x < GW - 1; x++) {
+      const idx = y * GW + x;
+      if (isBg[idx]) continue;
+      const r = gridR[idx];
+      const g = gridG[idx];
+      const b = gridB[idx];
+      const sat = pixelSat(r, g, b);
+      if (sat >= 0.40) continue;
+      const dist = distToNearestBorderSeed(r, g, b);
+      if (dist.rgb > 36 || dist.chroma > 18) continue;
+      // Check local smoothness (4-neighbor max delta): walls/sky are smooth, bark/leaves have texture
+      const idxL = idx - 1;
+      const idxR = idx + 1;
+      const idxU = idx - GW;
+      const idxD = idx + GW;
+      const gMax = Math.max(
+        Math.hypot(r - gridR[idxL], g - gridG[idxL], b - gridB[idxL]),
+        Math.hypot(r - gridR[idxR], g - gridG[idxR], b - gridB[idxR]),
+        Math.hypot(r - gridR[idxU], g - gridG[idxU], b - gridB[idxU]),
+        Math.hypot(r - gridR[idxD], g - gridG[idxD], b - gridB[idxD])
+      );
+      if (gMax <= 12) {
+        isBg[idx] = 1;
+      }
+    }
+  }
+
+  // Find tight bounding box of the foreground subject in grid coordinates
+  let minGX = GW;
+  let maxGX = 0;
+  let minGY = GH;
+  let maxGY = 0;
+  let fgCount = 0;
+  for (let y = 0; y < GH; y++) {
+    for (let x = 0; x < GW; x++) {
+      if (!isBg[y * GW + x]) {
+        if (x < minGX) minGX = x;
+        if (x > maxGX) maxGX = x;
+        if (y < minGY) minGY = y;
+        if (y > maxGY) maxGY = y;
+        fgCount++;
+      }
+    }
+  }
+
+  // Fallback if flood-fill ate too much (e.g., very low-contrast monochrome photo)
+  if (fgCount < GW * GH * 0.03 || maxGX - minGX < GW * 0.08 || maxGY - minGY < GH * 0.08) {
+    minGX = Math.floor(GW * 0.1);
+    maxGX = Math.floor(GW * 0.9);
+    minGY = Math.floor(GH * 0.06);
+    maxGY = Math.floor(GH * 0.94);
+    for (let y = minGY; y <= maxGY; y++) {
+      for (let x = minGX; x <= maxGX; x++) {
+        isBg[y * GW + x] = 0;
+      }
+    }
+  }
+
+  const cropGW = Math.max(4, maxGX - minGX);
+  const cropGH = Math.max(4, maxGY - minGY);
+  const aspectRatio = Number(
+    Math.max(0.45, Math.min(2.6, (cropGH / GH * h) / Math.max(1, (cropGW / GW) * w))).toFixed(2)
+  );
+
+  // 2. High-Resolution Multi-Interval Raycasting across 32 vertical slices (bottom y=0 .. top y=1)
+  const SLICE_COUNT = 32;
+  const slices: PhotoSculptSlice[] = [];
+  let maxBranchColumns = 1;
+  let multiIntervalSlices = 0;
+  const bandHalfH = Math.max(1, Math.min(4, Math.round(cropGH / (SLICE_COUNT * 2.5))));
+
+  for (let s = 0; s < SLICE_COUNT; s++) {
+    const yNorm = s / (SLICE_COUNT - 1);
+    const gyCenter = Math.max(0, Math.min(GH - 1, Math.round(maxGY - yNorm * cropGH)));
+    const gyStart = Math.max(minGY, gyCenter - bandHalfH);
+    const gyEnd = Math.min(maxGY, gyCenter + bandHalfH);
+
+    // Build a 1D foreground occupancy array across cropGW for this slice band
+    const occ = new Uint8Array(cropGW + 1);
+    for (let xx = 0; xx <= cropGW; xx++) {
+      const gx = minGX + xx;
+      let hits = 0;
+      for (let yy = gyStart; yy <= gyEnd; yy++) {
+        if (!isBg[yy * GW + gx]) hits++;
+      }
+      if (hits > 0) occ[xx] = 1;
+    }
+
+    // Bridge tiny 1px noise gaps
+    for (let xx = 1; xx < cropGW; xx++) {
+      if (!occ[xx] && occ[xx - 1] && occ[xx + 1]) occ[xx] = 1;
+    }
+
+    // Extract distinct horizontal matter intervals [start..end]
+    const minRunPx = Math.max(2, Math.round(cropGW * 0.035));
+    const intervals: PhotoSculptInterval[] = [];
+    let runStart = -1;
+    const flushInterval = (rs: number, re: number) => {
+      if (re - rs + 1 < minRunPx) return;
+      let ir = 0;
+      let ig = 0;
+      let ib = 0;
+      let icnt = 0;
+      for (let xx = rs; xx <= re; xx++) {
+        const gIdx = gyCenter * GW + (minGX + xx);
+        if (!isBg[gIdx]) {
+          ir += gridR[gIdx];
+          ig += gridG[gIdx];
+          ib += gridB[gIdx];
+          icnt++;
+        }
+      }
+      const startN = Number((rs / cropGW - 0.5).toFixed(3));
+      const endN = Number((re / cropGW - 0.5).toFixed(3));
+      const cxN = Number(((startN + endN) * 0.5).toFixed(3));
+      const hwN = Number(Math.max(0.025, (endN - startN) * 0.5).toFixed(3));
+      const col =
+        icnt > 0 ? rgbToHex(ir / icnt, ig / icnt, ib / icnt) : vf.colorLeafMain;
+      intervals.push({ start: startN, end: endN, cx: cxN, hw: hwN, color: col });
+    };
+
+    for (let xx = 0; xx <= cropGW; xx++) {
+      if (occ[xx]) {
+        if (runStart === -1) runStart = xx;
+      } else if (runStart !== -1) {
+        flushInterval(runStart, xx - 1);
+        runStart = -1;
+      }
+    }
+    if (runStart !== -1) flushInterval(runStart, cropGW);
+
+    if (intervals.length >= 2) {
+      multiIntervalSlices++;
+      if (intervals.length > maxBranchColumns) maxBranchColumns = Math.min(5, intervals.length);
+    }
+
+    const fallbackCol = yNorm < 0.3 ? vf.colorTrunk : yNorm > 0.72 ? vf.colorLeafTip : vf.colorLeafMain;
+    const outerStart = intervals.length > 0 ? intervals[0].start : -0.18;
+    const outerEnd = intervals.length > 0 ? intervals[intervals.length - 1].end : 0.18;
+    const cx = Number(((outerStart + outerEnd) * 0.5).toFixed(3));
+    const hw = Number(Math.max(0.035, Math.min(0.52, (outerEnd - outerStart) * 0.5)).toFixed(3));
+    const primaryInterval =
+      intervals.length > 0
+        ? intervals.reduce((best, cur) => (cur.hw > best.hw ? cur : best), intervals[0])
+        : null;
+    const color = primaryInterval ? primaryInterval.color : fallbackCol;
+    const edgeColor = intervals.length > 0 ? intervals[intervals.length - 1].color : color;
+
+    slices.push({
+      y: Number(yNorm.toFixed(3)),
+      cx,
+      hw,
+      color,
+      edgeColor,
+      intervals: intervals.length > 0 ? intervals : [{ start: cx - hw, end: cx + hw, cx, hw, color }],
+    });
+  }
+
+  // Detect stem-to-crown transition (proportional to SLICE_COUNT)
+  let stemTopFrac = 0.26;
+  const baseW = (slices[0].hw + slices[1].hw + slices[2].hw) / 3;
+  const upperStart = Math.floor(SLICE_COUNT * 0.3);
+  const upperEnd = Math.floor(SLICE_COUNT * 0.88);
+  const upperMaxW = Math.max(...slices.slice(upperStart, upperEnd).map((sl) => sl.hw));
+  if (baseW > upperMaxW * 0.62) {
+    stemTopFrac = 0.14;
+  } else {
+    let bestJump = 0;
+    let bestY = 0.34;
+    const searchStart = Math.max(2, Math.floor(SLICE_COUNT * 0.12));
+    const searchEnd = Math.min(SLICE_COUNT - 3, Math.floor(SLICE_COUNT * 0.65));
+    for (let i = searchStart; i <= searchEnd; i++) {
+      const jump = slices[i + 2].hw - slices[i - 2].hw;
+      if (jump > bestJump) {
+        bestJump = jump;
+        bestY = slices[i].y;
+      }
+    }
+    stemTopFrac = Number(Math.max(0.18, Math.min(0.62, bestY)).toFixed(2));
+  }
+
+  // 3. Sample a clean HD 32x32 foreground color map (only reading non-background flood-fill pixels!)
+  const colorGridW = 32;
+  const colorGridH = 32;
+  const sampleWin = Math.max(2, Math.min(6, Math.round(Math.min(cropGW, cropGH) / (colorGridW * 1.8))));
+  const colorGridHex: string[] = [];
+  for (let gy = 0; gy < colorGridH; gy++) {
+    const yNorm = (gy + 0.5) / colorGridH;
+    const targetGY = Math.max(minGY, Math.min(maxGY, Math.round(maxGY - yNorm * cropGH)));
+    const sliceRef = slices[Math.min(SLICE_COUNT - 1, Math.floor(yNorm * SLICE_COUNT))];
+    for (let gx = 0; gx < colorGridW; gx++) {
+      const xNorm = (gx + 0.5) / colorGridW;
+      const targetGX = Math.max(minGX, Math.min(maxGX, Math.round(minGX + xNorm * cropGW)));
+      let sr = 0;
+      let sg = 0;
+      let sb = 0;
+      let cnt = 0;
+      for (let dy = -sampleWin; dy <= sampleWin; dy++) {
+        for (let dx = -sampleWin; dx <= sampleWin; dx++) {
+          const sx = Math.max(minGX, Math.min(maxGX, targetGX + dx));
+          const sy = Math.max(minGY, Math.min(maxGY, targetGY + dy));
+          const idx = sy * GW + sx;
+          if (!isBg[idx]) {
+            sr += gridR[idx];
+            sg += gridG[idx];
+            sb += gridB[idx];
+            cnt++;
+          }
+        }
+      }
+      colorGridHex.push(cnt > 0 ? rgbToHex(sr / cnt, sg / cnt, sb / cnt) : sliceRef.color);
+    }
+  }
+
+  const isRadialLobes = vf.edgeSpikiness >= 0.24 || vf.upperCapIslands >= 1.55;
+  const lobeCount = Math.max(
+    5,
+    Math.min(14, Math.round(6 + vf.edgeSpikiness * 12 + (vf.vividClusterCount >= 3 ? 2 : 0)))
+  );
+
+  const blueprint: PhotoSculptBlueprint = {
+    aspectRatio,
+    stemTopFrac,
+    isRadialLobes,
+    edgeSpikiness: vf.edgeSpikiness,
+    lobeCount,
+    maxBranchColumns,
+    hasMultiBranchGaps: multiIntervalSlices >= Math.max(3, Math.round(SLICE_COUNT * 0.16)) && maxBranchColumns >= 2,
+    photoEnvelopeStrength: 0.72,
+    slices,
+    colorGridW,
+    colorGridH,
+    colorGridHex,
+  };
+
+  // Optional visual diagnostic previews (Flood-Fill mask + 32 multi-interval slices + 32x32 color map)
+  let debugMaskDataUrl: string | undefined;
+  let debugColorGridDataUrl: string | undefined;
+  const foregroundCoveragePct = Math.round((fgCount / Math.max(1, GW * GH)) * 100);
+  if (typeof document !== 'undefined') {
+    try {
+      const mCanvas = document.createElement('canvas');
+      const mW = 192;
+      const mH = Math.max(96, Math.min(240, Math.round((GH / Math.max(1, GW)) * mW)));
+      mCanvas.width = mW;
+      mCanvas.height = mH;
+      const mCtx = mCanvas.getContext('2d');
+      if (mCtx) {
+        const imgOut = mCtx.createImageData(mW, mH);
+        for (let py = 0; py < mH; py++) {
+          const gy = Math.min(GH - 1, Math.floor((py / mH) * GH));
+          for (let px = 0; px < mW; px++) {
+            const gx = Math.min(GW - 1, Math.floor((px / mW) * GW));
+            const gIdx = gy * GW + gx;
+            const oIdx = (py * mW + px) * 4;
+            if (isBg[gIdx]) {
+              // Dark slate-blue checkerboard tint for removed background
+              const chk = ((px >> 3) + (py >> 3)) % 2 === 0 ? 18 : 28;
+              imgOut.data[oIdx] = chk;
+              imgOut.data[oIdx + 1] = chk + 8;
+              imgOut.data[oIdx + 2] = chk + 24;
+              imgOut.data[oIdx + 3] = 255;
+            } else {
+              imgOut.data[oIdx] = Math.round(gridR[gIdx]);
+              imgOut.data[oIdx + 1] = Math.round(gridG[gIdx]);
+              imgOut.data[oIdx + 2] = Math.round(gridB[gIdx]);
+              imgOut.data[oIdx + 3] = 255;
+            }
+          }
+        }
+        mCtx.putImageData(imgOut, 0, 0);
+
+        // Draw crop bounding box
+        const bx = (minGX / GW) * mW;
+        const by = (minGY / GH) * mH;
+        const bw = (cropGW / GW) * mW;
+        const bh = (cropGH / GH) * mH;
+        mCtx.strokeStyle = 'rgba(148, 163, 184, 0.7)';
+        mCtx.lineWidth = 1;
+        mCtx.strokeRect(bx, by, bw, bh);
+
+        // Draw 32 multi-interval raycast slices in bright emerald/cyan
+        mCtx.lineWidth = 1.5;
+        for (const sl of slices) {
+          const sy = by + (1 - sl.y) * bh;
+          const ivs = sl.intervals || [];
+          mCtx.strokeStyle = ivs.length >= 2 ? '#22d3ee' : '#34d399';
+          for (const iv of ivs) {
+            const x1 = bx + (iv.start + 0.5) * bw;
+            const x2 = bx + (iv.end + 0.5) * bw;
+            mCtx.beginPath();
+            mCtx.moveTo(x1, sy);
+            mCtx.lineTo(x2, sy);
+            mCtx.stroke();
+          }
+        }
+
+        // Draw stemTopFrac transition line in amber
+        const stemLineY = by + (1 - stemTopFrac) * bh;
+        mCtx.strokeStyle = '#fbbf24';
+        mCtx.lineWidth = 1.5;
+        mCtx.beginPath();
+        mCtx.moveTo(bx, stemLineY);
+        mCtx.lineTo(bx + bw, stemLineY);
+        mCtx.stroke();
+
+        debugMaskDataUrl = mCanvas.toDataURL('image/png');
+      }
+
+      const cCanvas = document.createElement('canvas');
+      cCanvas.width = colorGridW * 4;
+      cCanvas.height = colorGridH * 4;
+      const cCtx = cCanvas.getContext('2d');
+      if (cCtx) {
+        for (let gy = 0; gy < colorGridH; gy++) {
+          for (let gx = 0; gx < colorGridW; gx++) {
+            cCtx.fillStyle = colorGridHex[gy * colorGridW + gx] || '#22c55e';
+            // Flip Y so top of plant is at top of preview
+            cCtx.fillRect(gx * 4, (colorGridH - 1 - gy) * 4, 4, 4);
+          }
+        }
+        debugColorGridDataUrl = cCanvas.toDataURL('image/png');
+      }
+    } catch {
+      // ignore canvas debug preview errors
+    }
+  }
+
+  // 4. Recalibrate true foreground-only 5-color palette & archetype using the clean Flood-Fill mask!
+  let trR = 0, trG = 0, trB = 0, trCnt = 0;
+  let darkTrR = 0, darkTrG = 0, darkTrB = 0, darkTrCnt = 0;
+  const upperLavenderRose: { r: number; g: number; b: number; sat: number; lum: number }[] = [];
+  const upperVivid: { r: number; g: number; b: number; sat: number; lum: number }[] = [];
+  const upperAll: { r: number; g: number; b: number; sat: number; lum: number }[] = [];
+
+  const palStep = Math.max(1, Math.floor(Math.min(cropGW, cropGH) / 96));
+  for (let gy = minGY; gy <= maxGY; gy += palStep) {
+    const yNorm = (maxGY - gy) / Math.max(1, cropGH);
+    for (let gx = minGX; gx <= maxGX; gx += palStep) {
+      const idx = gy * GW + gx;
+      if (isBg[idx]) continue;
+      const r = gridR[idx];
+      const g = gridG[idx];
+      const b = gridB[idx];
+      const sat = pixelSat(r, g, b);
+      const lum = (r * 0.299 + g * 0.587 + b * 0.114) / 255;
+
+      if (yNorm < 0.36) {
+        trR += r; trG += g; trB += b; trCnt++;
+        if (lum < 0.42 && sat < 0.52) {
+          darkTrR += r; darkTrG += g; darkTrB += b; darkTrCnt++;
+        }
+      } else {
+        upperAll.push({ r, g, b, sat, lum });
+        // Distinguish lavender/lilac/rose petals (blue >= green - 3, red > green + 4) from brown bark (where green >> blue)!
+        const isLavenderOrRose = b >= g - 3 && r >= g + 4 && lum > 0.26 && lum < 0.92;
+        if (isLavenderOrRose) {
+          upperLavenderRose.push({ r, g, b, sat: Math.max(sat, 0.52), lum });
+        }
+        if ((sat > 0.34 || isLavenderOrRose) && lum > 0.12 && lum < 0.92) {
+          upperVivid.push({
+            r,
+            g,
+            b,
+            sat: isLavenderOrRose ? Math.max(sat, 0.52) : sat,
+            lum,
+          });
+        }
+      }
+    }
+  }
+
+  const cleanPalette: Partial<ImageVisionFeatures> = {};
+  if (darkTrCnt >= 8) {
+    cleanPalette.colorTrunk = rgbToHex(darkTrR / darkTrCnt, darkTrG / darkTrCnt, darkTrB / darkTrCnt);
+  } else if (trCnt >= 8) {
+    cleanPalette.colorTrunk = rgbToHex(trR / trCnt, trG / trCnt, trB / trCnt);
+  }
+
+  const foliagePool =
+    upperLavenderRose.length >= 14
+      ? upperLavenderRose
+      : upperVivid.length >= 16
+      ? upperVivid
+      : upperAll;
+  if (upperLavenderRose.length >= 14) {
+    cleanPalette.dominantHueCategory = 'violet';
+  }
+  if (foliagePool.length >= 10) {
+    // Sort by luminance for deep main foliage vs bright tip/flower highlights
+    const byLum = [...foliagePool].sort((a, b) => a.lum - b.lum);
+    const bySat = [...foliagePool].sort((a, b) => b.sat - a.sat);
+    const avgSlice = (arr: typeof foliagePool, a: number, b: number) => {
+      const sub = arr.slice(a, Math.max(a + 1, b));
+      const rr = sub.reduce((s, p) => s + p.r, 0) / sub.length;
+      const gg = sub.reduce((s, p) => s + p.g, 0) / sub.length;
+      const bb = sub.reduce((s, p) => s + p.b, 0) / sub.length;
+      return rgbToHex(rr, gg, bb);
+    };
+    const n = byLum.length;
+    cleanPalette.colorLeafMain = avgSlice(byLum, Math.floor(n * 0.15), Math.floor(n * 0.52));
+    cleanPalette.colorLeafTip = avgSlice(byLum, Math.floor(n * 0.58), Math.floor(n * 0.88));
+    cleanPalette.colorFlower = avgSlice(bySat, 0, Math.max(4, Math.floor(n * 0.22)));
+    cleanPalette.colorAccent = avgSlice(byLum, Math.floor(n * 0.82), n);
+  }
+
+  // Refine 2D archetype using the clean Flood-Fill lower vs upper silhouette & multi-branch topology!
+  const lowerAvgHw =
+    slices.slice(1, Math.max(4, Math.floor(SLICE_COUNT * 0.3))).reduce((s, sl) => s + sl.hw, 0) /
+    Math.max(1, Math.floor(SLICE_COUNT * 0.3) - 1);
+  const upperAvgHw =
+    slices.slice(Math.floor(SLICE_COUNT * 0.55), SLICE_COUNT - 1).reduce((s, sl) => s + sl.hw, 0) /
+    Math.max(1, SLICE_COUNT - 1 - Math.floor(SLICE_COUNT * 0.55));
+  const hasBonsaiMultiBranchSilhouette =
+    (lowerAvgHw < 0.34 && upperAvgHw > lowerAvgHw * 1.25 && maxBranchColumns >= 2) ||
+    (maxBranchColumns >= 3 &&
+      multiIntervalSlices >= Math.max(3, Math.round(SLICE_COUNT * 0.16)) &&
+      aspectRatio >= 1.1);
+  const isSpikyAutumnBonsaiMisreadAsFungi =
+    vf.detectedArchetype === 'fungi_umbel_colony' &&
+    vf.edgeSpikiness >= 0.38 &&
+    stemTopFrac >= 0.32 &&
+    maxBranchColumns >= 3;
+
+  if (
+    isSpikyAutumnBonsaiMisreadAsFungi ||
+    (hasBonsaiMultiBranchSilhouette &&
+      (vf.detectedArchetype === 'sympodial_broadleaf_tree' ||
+        vf.detectedArchetype === 'spiny_claw_rosette'))
+  ) {
+    cleanPalette.detectedArchetype = 'gnarled_bonsai_cloud';
+  }
+
+  return Object.assign(blueprint, {
+    __debugMaskDataUrl: debugMaskDataUrl,
+    __debugColorGridDataUrl: debugColorGridDataUrl,
+    __foregroundCoveragePct: foregroundCoveragePct,
+    __cleanPalette: cleanPalette,
+  });
+}
+
 export async function preparePlantImageForAI(file: File): Promise<PreparedPlantImage> {
   if (!file.type.startsWith('image/')) {
     throw new Error('Selecciona un archivo de imagen válido (JPG, PNG o WEBP).');
@@ -1184,9 +1862,9 @@ export async function preparePlantImageForAI(file: File): Promise<PreparedPlantI
     image.src = rawDataUrl;
   });
 
-  const maxDimension = 512;
-  let targetW = img.naturalWidth || img.width || 512;
-  let targetH = img.naturalHeight || img.height || 512;
+  const maxDimension = 1024;
+  let targetW = img.naturalWidth || img.width || 1024;
+  let targetH = img.naturalHeight || img.height || 1024;
 
   if (targetW > maxDimension || targetH > maxDimension) {
     const ratio = Math.min(maxDimension / targetW, maxDimension / targetH);
@@ -1204,15 +1882,42 @@ export async function preparePlantImageForAI(file: File): Promise<PreparedPlantI
 
   ctx.clearRect(0, 0, targetW, targetH);
   ctx.drawImage(img, 0, 0, targetW, targetH);
-  const visionFeatures = extractVisionFeaturesFromCanvas(ctx, targetW, targetH);
+  const rawVisionFeatures = extractVisionFeaturesFromCanvas(ctx, targetW, targetH);
+  const rawPhotoSculpt = extractPhotoSculptBlueprint(ctx, targetW, targetH, rawVisionFeatures) as PhotoSculptBlueprint & {
+    __debugMaskDataUrl?: string;
+    __debugColorGridDataUrl?: string;
+    __foregroundCoveragePct?: number;
+    __cleanPalette?: Partial<ImageVisionFeatures>;
+  };
+  const {
+    __debugMaskDataUrl: debugMaskDataUrl,
+    __debugColorGridDataUrl: debugColorGridDataUrl,
+    __foregroundCoveragePct: foregroundCoveragePct,
+    __cleanPalette: cleanPalette,
+    ...photoSculptData
+  } = rawPhotoSculpt;
 
+  const visionFeatures: ImageVisionFeatures = {
+    ...rawVisionFeatures,
+    ...(cleanPalette || {}),
+  };
+
+  // Keep local Flood-Fill scan at full 1024px HD, while sending a fast 512px JPEG to the VLM (just like before when Cloud & Ollama responded in 4s without timeouts!)
+  const sendMaxDim = 512;
+  let sendW = targetW;
+  let sendH = targetH;
+  if (sendW > sendMaxDim || sendH > sendMaxDim) {
+    const sRatio = Math.min(sendMaxDim / sendW, sendMaxDim / sendH);
+    sendW = Math.max(64, Math.round(sendW * sRatio));
+    sendH = Math.max(64, Math.round(sendH * sRatio));
+  }
   const sendCanvas = document.createElement('canvas');
-  sendCanvas.width = targetW;
-  sendCanvas.height = targetH;
+  sendCanvas.width = sendW;
+  sendCanvas.height = sendH;
   const sendCtx = sendCanvas.getContext('2d')!;
   sendCtx.fillStyle = '#0f172a';
-  sendCtx.fillRect(0, 0, targetW, targetH);
-  sendCtx.drawImage(img, 0, 0, targetW, targetH);
+  sendCtx.fillRect(0, 0, sendW, sendH);
+  sendCtx.drawImage(img, 0, 0, sendW, sendH);
 
   const outputMime: 'image/jpeg' = 'image/jpeg';
   const compressedDataUrl = sendCanvas.toDataURL(outputMime, 0.82);
@@ -1224,16 +1929,29 @@ export async function preparePlantImageForAI(file: File): Promise<PreparedPlantI
     mimeType: outputMime,
     fileName: file.name.replace(/\.[^.]+$/, ''),
     visionFeatures,
+    photoSculptData,
+    debugMaskDataUrl,
+    debugColorGridDataUrl,
+    scanResolution: `${targetW}×${targetH}`,
+    foregroundCoveragePct,
   };
 }
 
 export async function designPlantFromImageWithAI(
   prepared: PreparedPlantImage,
   userNotes: string,
-  aiConfigOverride?: AiProviderConfig
+  aiConfigOverride?: AiProviderConfig,
+  reconstructFromPhoto = true
 ): Promise<AiPlantDesignResult> {
   const aiConfig = aiConfigOverride || loadAiProviderConfig();
   const unifiedLibraryParts = buildPartsLibraryPayloadForAI(32);
+
+  const enrichedVisionFeatures = {
+    ...prepared.visionFeatures,
+    maxBranchColumns: prepared.photoSculptData.maxBranchColumns ?? 1,
+    hasMultiBranchGaps: prepared.photoSculptData.hasMultiBranchGaps ?? false,
+    stemTopFrac: prepared.photoSculptData.stemTopFrac ?? 0.28,
+  };
 
   const response = await fetch('/api/ai/design-plant', {
     method: 'POST',
@@ -1243,7 +1961,7 @@ export async function designPlantFromImageWithAI(
       imageBase64: prepared.imageBase64,
       mimeType: prepared.mimeType,
       userNotes: userNotes.trim(),
-      visionFeatures: prepared.visionFeatures,
+      visionFeatures: enrichedVisionFeatures,
       aiConfig,
       customParts: unifiedLibraryParts,
     }),
@@ -1260,10 +1978,89 @@ export async function designPlantFromImageWithAI(
   const aiParams = res.params || {};
   const rawCustomEl = res.customElement || {};
 
+  // FRONTEND FALLBACK GUARD: If Cloud returned 429/503 or Ollama timed out (providerUsed starts with "Síntesis" or "Visión Local")
+  // and the running Node server returned a generic flower (Pasiflora/Anémona/Loto) for a multi-branch tree/bonsai/succulent,
+  // upgrade the design right here in the frontend using the high-definition Step 1 measurements!
+  const isLocalFallbackResult =
+    typeof payload.providerUsed === 'string' &&
+    (payload.providerUsed.includes('Síntesis Morfológica Local') ||
+      payload.providerUsed.includes('Visión Local'));
+
+  const vfNow = prepared.visionFeatures;
+  const bpNow = prepared.photoSculptData;
+  if (
+    isLocalFallbackResult &&
+    (vfNow.detectedArchetype === 'gnarled_bonsai_cloud' ||
+      ((bpNow.maxBranchColumns ?? 1) >= 2 && bpNow.hasMultiBranchGaps))
+  ) {
+    const isSucculentCaudex =
+      (bpNow.stemTopFrac ?? 0.28) <= 0.22 &&
+      vfNow.upperCapIslands >= 3.0 &&
+      vfNow.warmOrangeRatio < 0.14 &&
+      vfNow.dominantHueCategory !== 'green';
+
+    if (isSucculentCaudex) {
+      res.identifiedName = 'Árbol Caudex Suculento de Rosetas Lavanda';
+      res.scientificName = 'Graptopetalum caudiciforme';
+      res.reasoningSummary =
+        'Tronco caudex leñoso grueso ramificado en brazos coronados por rosetas suculentas carnosas en la paleta extraída de la imagen.';
+      rawCustomEl.stemStructure = 'caudex_rosette_branch_tree';
+      rawCustomEl.canopyElement = 'succulent_fleshy_rosettes';
+      rawCustomEl.surfaceElement = 'fleshy_tubercles_warts';
+      rawCustomEl.hangingElement = 'none';
+      rawCustomEl.synthesizedTipPrimitive = 'none';
+      rawCustomEl.synthesizedBasalFoliage = 'none';
+      rawCustomEl.stemCount = 6;
+      rawCustomEl.lobeCount = 12;
+      rawCustomEl.petalOpenness = 0.76;
+      aiParams.barkType = 'cork_oak_quercus';
+      aiParams.tonalMode = 'velvet_spore_dust';
+      aiParams.colorTrunk = vfNow.colorTrunk || '#7c624c';
+      aiParams.colorLeafMain = vfNow.dominantHueCategory === 'violet' ? vfNow.colorLeafMain : '#9b7fa6';
+      aiParams.colorLeafTip = vfNow.dominantHueCategory === 'violet' ? vfNow.colorLeafTip : '#cbb4d4';
+      aiParams.colorFlower = vfNow.dominantHueCategory === 'violet' ? vfNow.colorFlower : '#b388c8';
+      aiParams.colorAccent = vfNow.dominantHueCategory === 'violet' ? vfNow.colorAccent : '#e9d8f2';
+    } else if (vfNow.dominantHueCategory === 'green' && vfNow.edgeSpikiness >= 0.34) {
+      res.identifiedName = 'Bonsái de Pino / Enebro sobre Roca';
+      res.scientificName = 'Juniperus chinensis bonsai';
+      rawCustomEl.stemStructure = 'ebony_fluted_bonsai_arch';
+      rawCustomEl.canopyElement = 'conifer_needle_brushes';
+      rawCustomEl.surfaceElement = 'moss_lichen_bark';
+      rawCustomEl.hangingElement = 'none';
+      rawCustomEl.synthesizedTipPrimitive = 'none';
+      rawCustomEl.synthesizedBasalFoliage = 'none';
+      aiParams.barkType = 'gnarled_olive_burl';
+      aiParams.tonalMode = 'natural_botanical';
+    } else if (vfNow.warmOrangeRatio >= 0.20 && vfNow.edgeSpikiness >= 0.36) {
+      res.identifiedName = 'Bonsái de Arce Japonés Otoñal (Acer palmatum)';
+      res.scientificName = 'Acer palmatum autumnale';
+      rawCustomEl.stemStructure = 'gnarled_bonsai';
+      rawCustomEl.canopyElement = 'palmate_maple_star_leaves';
+      rawCustomEl.surfaceElement = 'moss_lichen_bark';
+      rawCustomEl.hangingElement = 'none';
+      rawCustomEl.synthesizedTipPrimitive = 'none';
+      rawCustomEl.synthesizedBasalFoliage = 'none';
+      rawCustomEl.lobeCount = 7;
+      aiParams.barkType = 'fissured';
+      aiParams.tonalMode = 'natural_botanical';
+    } else {
+      res.identifiedName = 'Bonsái Escultural Acanalado Multi-Copa';
+      res.scientificName = 'Ebenus tortuosa bonsai';
+      rawCustomEl.stemStructure = 'ebony_fluted_bonsai_arch';
+      rawCustomEl.canopyElement = 'cloud_bonsai_pads';
+      rawCustomEl.surfaceElement = 'smooth_striated';
+      rawCustomEl.hangingElement = 'none';
+      rawCustomEl.synthesizedTipPrimitive = 'none';
+      rawCustomEl.synthesizedBasalFoliage = 'none';
+      aiParams.barkType = 'fissured';
+      aiParams.tonalMode = 'natural_botanical';
+    }
+  }
+
   const customElId = `el_ai_${Date.now()}_${Math.floor(Math.random() * 900 + 100)}`;
   const customPresetId = `ai_species_${Date.now()}_${Math.floor(Math.random() * 900 + 100)}`;
 
-  const createdElement: CustomBotanicalElement = upgradeSynthesizedCustomElement({
+  const baseElement: CustomBotanicalElement = upgradeSynthesizedCustomElement({
     ...DEFAULT_CUSTOM_ELEMENT,
     ...rawCustomEl,
     id: customElId,
@@ -1271,9 +2068,70 @@ export async function designPlantFromImageWithAI(
     scientificName: res.scientificName || 'Botanica composita sp.',
     description:
       res.reasoningSummary ||
-      'Elemento 3D generado mediante combinación modular de tallo, superficie, follaje y filamentos.',
+      'Elemento 3D generado en modo híbrido: esqueleto botánico IA + envolvente 3D y mapa cromático real de la foto.',
     createdAt: Date.now(),
+    photoSculptData: {
+      ...prepared.photoSculptData,
+      photoEnvelopeStrength: reconstructFromPhoto ? 0.78 : 0.0,
+    },
   });
+
+  // Guard against false-positive hanging filaments on non-weeping bonsai/trees/flowers/succulents
+  // Check only the species name + user notes + explicit weeping/vine/aerial-root stem structures
+  const nameAndNotes = `${res.identifiedName || ''} ${res.scientificName || ''} ${userNotes || ''}`.toLowerCase();
+  const allowsHangingFilaments =
+    prepared.visionFeatures.detectedArchetype === 'weeping_tree' ||
+    prepared.visionFeatures.detectedArchetype === 'spiral_volute_vine' ||
+    baseElement.stemStructure === 'weeping_willow' ||
+    baseElement.stemStructure === 'strangler_root_cage' ||
+    baseElement.stemStructure === 'spiral_volute_vine' ||
+    baseElement.canopyElement === 'lacy_veil_spiked_mushroom' ||
+    baseElement.canopyElement === 'carnivorous_nepenthes_pitchers' ||
+    /llor[oó]n|weeping|wisteria|glicinia|banyan|ficus|ra[ií]ces a[eé]reas|aerial root|zarcill|tendril|musgo espa[nñ]ol|spanish moss|velo|encaje|jarra|pitcher/.test(
+      nameAndNotes
+    );
+
+  const sanitizedBaseElement: CustomBotanicalElement =
+    !allowsHangingFilaments &&
+    baseElement.hangingElement &&
+    baseElement.hangingElement !== 'none'
+      ? {
+          ...baseElement,
+          hangingElement: 'none',
+          filamentCount: 0,
+        }
+      : baseElement;
+
+  // HYBRID MODE: Let the VLM control real botanical anatomy (branches, needles, petals, spines, caps)
+  // while injecting photoSculptData as a 3D bounding envelope + 32×32 real pixel color map!
+  // Only fall back to pure 'photo_sculpted_reconstruction' if the VLM returned a generic placeholder.
+  const isGenericFallbackCanopy =
+    !sanitizedBaseElement.canopyElement ||
+    sanitizedBaseElement.canopyElement === 'photo_sculpted_reconstruction' ||
+    sanitizedBaseElement.canopyElement === 'custom_leaf_lamina' ||
+    sanitizedBaseElement.canopyElement === 'custom_flower_corolla';
+
+  const useDirectPhotoMesh = reconstructFromPhoto && isGenericFallbackCanopy;
+  const sliceCountLabel = prepared.photoSculptData.slices.length;
+  const colorGridLabel = `${prepared.photoSculptData.colorGridW}×${prepared.photoSculptData.colorGridH}`;
+
+  const createdElement: CustomBotanicalElement = reconstructFromPhoto
+    ? {
+        ...sanitizedBaseElement,
+        canopyElement: useDirectPhotoMesh
+          ? 'photo_sculpted_reconstruction'
+          : sanitizedBaseElement.canopyElement,
+        lobeCount: sanitizedBaseElement.lobeCount || prepared.photoSculptData.lobeCount,
+        petalOpenness: sanitizedBaseElement.petalOpenness ?? 0.68,
+        photoSculptData: {
+          ...prepared.photoSculptData,
+          photoEnvelopeStrength: 0.78,
+        },
+        aiNewPartsReport: useDirectPhotoMesh
+          ? `Reconstrucción 3D multi-intervalo desde la foto (Flood-Fill HD + ${sliceCountLabel} cortes + ${prepared.photoSculptData.maxBranchColumns ?? 1} columnas + mapa de color ${colorGridLabel}). ${sanitizedBaseElement.aiNewPartsReport || ''}`.trim()
+          : `Modo Híbrido IA + Foto: esqueleto "${sanitizedBaseElement.stemStructure}" + copa "${sanitizedBaseElement.canopyElement}" moldeados por la envolvente 3D (${sliceCountLabel} cortes, ${prepared.photoSculptData.maxBranchColumns ?? 1} columnas) y color real ${colorGridLabel} en follaje. ${sanitizedBaseElement.aiNewPartsReport || ''}`.trim(),
+      }
+    : sanitizedBaseElement;
 
   const bgPreset =
     BACKGROUND_PRESETS.find((b) => b.id === res.recommendedBg) || BACKGROUND_PRESETS[0];
@@ -1282,10 +2140,52 @@ export async function designPlantFromImageWithAI(
     createdElement.canopyElement === 'moss_velvet_mantle' ||
     createdElement.stemStructure === 'serpentine_mossy_deadwood';
 
+  // Preserve true dark/rich trunk color extracted from the clean Flood-Fill foreground (e.g., #262625 black ebony)
+  const hexLum = (hex?: string): number => {
+    if (!hex || !/^#[0-9a-f]{6}$/i.test(hex)) return 0.5;
+    const r = parseInt(hex.slice(1, 3), 16) / 255;
+    const g = parseInt(hex.slice(3, 5), 16) / 255;
+    const b = parseInt(hex.slice(5, 7), 16) / 255;
+    return r * 0.299 + g * 0.587 + b * 0.114;
+  };
+  const photoTrunkHex = prepared.visionFeatures.colorTrunk;
+  const resolvedTrunkHex =
+    reconstructFromPhoto &&
+    photoTrunkHex &&
+    hexLum(photoTrunkHex) < 0.28 &&
+    hexLum(aiParams.colorTrunk) > hexLum(photoTrunkHex) + 0.12
+      ? photoTrunkHex
+      : aiParams.colorTrunk || photoTrunkHex || DEFAULT_TREE_PARAMS.colorTrunk;
+
+  // Avoid pastel wash-out from generic gradient shaders (like tri_tone_xenogradient) when projecting real 32x32 photo colors
+  const washedOutInHybrid =
+    reconstructFromPhoto &&
+    (aiParams.tonalMode === 'tri_tone_xenogradient' || aiParams.tonalMode === 'translucent_jelly');
+
   const mergedParams: TreeParams = {
     ...DEFAULT_TREE_PARAMS,
     ...aiParams,
+    colorTrunk: resolvedTrunkHex,
+    engine: 'composed_custom',
+    foliageType: 'ai_custom_element',
+    tonalMode:
+      useDirectPhotoMesh || washedOutInHybrid
+        ? 'natural_botanical'
+        : aiParams.tonalMode || DEFAULT_TREE_PARAMS.tonalMode,
     barkType: isMossResult ? 'mossy_deadwood' : aiParams.barkType || DEFAULT_TREE_PARAMS.barkType,
+    height: reconstructFromPhoto
+      ? Number(
+          Math.max(
+            2.6,
+            Math.min(
+              6.4,
+              aiParams.height
+                ? aiParams.height * 0.55 + prepared.photoSculptData.aspectRatio * 3.5 * 0.45
+                : prepared.photoSculptData.aspectRatio * 3.5
+            )
+          ).toFixed(1)
+        )
+      : aiParams.height || DEFAULT_TREE_PARAMS.height,
     presetId: customPresetId,
     seed: Math.floor(1000 + Math.random() * 9000),
     representationStyle: 'botanical_leaves',
@@ -1313,10 +2213,6 @@ export async function designPlantFromImageWithAI(
     mergedParams,
     res.identifiedName || createdElement.name || 'Espécimen IA'
   );
-
-  if (!SPECIES_CATALOG.some((s) => s.id === createdPreset.id)) {
-    SPECIES_CATALOG.unshift(createdPreset);
-  }
 
   return {
     identifiedName: res.identifiedName || 'Espécimen Botánico IA',

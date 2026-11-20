@@ -77,7 +77,8 @@ export type CanopyElementType =
   | 'king_protea_crown'
   | 'curled_horn_rosette'
   | 'spiny_crater_dragon_orb'
-  | 'lacy_veil_spiked_mushroom';
+  | 'lacy_veil_spiked_mushroom'
+  | 'photo_sculpted_reconstruction';
 
 export type SurfaceElementType =
   | 'braided_vines'
@@ -187,6 +188,53 @@ export interface CustomBotanicalElement {
   petalTwistDeg?: number;
   petalMarginWave?: number;
   aiNewPartsReport?: string;
+  /** Direct 2D-to-3D Silhouette & Pixel Color-Map Reconstruction Blueprint extracted from user reference photo */
+  photoSculptData?: PhotoSculptBlueprint;
+}
+
+export interface PhotoSculptInterval {
+  /** Normalized horizontal start -0.5 .. +0.5 */
+  start: number;
+  /** Normalized horizontal end -0.5 .. +0.5 */
+  end: number;
+  /** Center X of this branch/column interval */
+  cx: number;
+  /** Half-width of this branch/column interval */
+  hw: number;
+  /** Dominant hex color inside this specific branch/column */
+  color: string;
+}
+
+export interface PhotoSculptSlice {
+  /** Normalized vertical coordinate 0 (base) .. 1 (apex) */
+  y: number;
+  /** Normalized horizontal centerline offset -0.5 .. +0.5 */
+  cx: number;
+  /** Normalized half-width 0.02 .. 0.55 */
+  hw: number;
+  /** Dominant hex color at this slice */
+  color: string;
+  /** Edge/outer hex color at this slice */
+  edgeColor: string;
+  /** Separated horizontal matter intervals (detects bifurcated trunks, cactus arms & open gaps) */
+  intervals?: PhotoSculptInterval[];
+}
+
+export interface PhotoSculptBlueprint {
+  aspectRatio: number;
+  stemTopFrac: number;
+  isRadialLobes: boolean;
+  edgeSpikiness: number;
+  lobeCount: number;
+  maxBranchColumns?: number;
+  hasMultiBranchGaps?: boolean;
+  /** Strength (0..1) of bounding envelope & color-map projection in Hybrid VLM+Photo mode */
+  photoEnvelopeStrength?: number;
+  slices: PhotoSculptSlice[];
+  /** Compact 16x16 foreground color map (row-major from y=0 bottom to y=15 top, x=0 left to x=15 right) */
+  colorGridW: number;
+  colorGridH: number;
+  colorGridHex: string[];
 }
 
 export type AlienArchetype =
